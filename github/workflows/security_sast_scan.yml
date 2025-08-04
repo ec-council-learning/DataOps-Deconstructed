@@ -1,0 +1,40 @@
+name: SQL SAST Security Scan
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+      - 'feature/*'
+
+jobs:
+  sast_security_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install SQLFluff for SAST Scanning
+        run: pip install sqlfluff==3.0.3
+
+      - name: Run SQLFluff Linting (SAST Scan)
+        run: |
+          sqlfluff lint models/ --dialect snowflake
+
+      - name: Slack Notification on Scan Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚨 SQL SAST security scan failed on branch `${{ github.ref_name }}`. Please review and address immediately."
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

@@ -1,0 +1,62 @@
+name: Observability Metrics Dashboard Generation
+
+on:
+  schedule:
+    - cron: '0 1 * * *' # Executes daily at 1 AM UTC
+  workflow_dispatch:
+
+jobs:
+  generate_metrics_dashboard:
+    runs-on: ubuntu-latest
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      GITHUB_ISSUE_ID: ${{ github.event.issue.number || 'no_issue' }}
+      GHA_DEPLOYMENT_STATUS: ${{ job.status }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: |
+          pip install snowflake-connector-python pandas markdown
+
+      - name: Generate Observability Metrics Dashboard
+        run: |
+          python scripts/generate_dashboard.py
+
+      - name: Commit and Push Generated Dashboard
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git checkout -b metrics-dashboard-${{ env.GITHUB_ISSUE_ID }}
+          git add dashboard_*.md
+          git commit -m "docs(metrics): update observability dashboard for issue ${{ env.GITHUB_ISSUE_ID }}"
+          git push -f origin metrics-dashboard-${{ env.GITHUB_ISSUE_ID }}
+
+      - name: Deploy Dashboard to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
+
+      - name: Slack Notification on Dashboard Generation Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚨 Observability metrics dashboard generation failed for issue: `${{ env.GITHUB_ISSUE_ID }}`. Immediate attention required."
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

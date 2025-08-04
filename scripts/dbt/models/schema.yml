@@ -1,0 +1,144 @@
+version: 2
+
+sources:
+  - name: "{{ generate_schema_name('bronze', this) }}"
+    tables:
+      - name: "{{ generate_alias_name('inventory_movements', this) }}"
+      - name: "{{ generate_alias_name('customer_orders', this) }}"
+
+models:
+  - name: stg_inventory_movements
+    description: "Staging model for inventory movements data."
+    columns:
+      - name: MOVEMENT_ID
+        description: "Unique identifier for each inventory movement."
+        tests:
+          - unique
+          - not_null
+      - name: PRODUCT_ID
+        description: "Identifier of the product."
+        tests:
+          - not_null
+          - relationships:
+              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("products", this) }}')
+              field: PRODUCT_ID
+      - name: WAREHOUSE_ID
+        description: "Identifier of the warehouse."
+        tests:
+          - not_null
+          - relationships:
+              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("warehouses", this) }}')
+              field: WAREHOUSE_ID
+      - name: MOVEMENT_DATE
+        description: "Date of the inventory movement."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type:
+              column_type: date
+      - name: QUANTITY
+        description: "Number of units moved."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: -1000
+              max_value: 1000
+      - name: MOVEMENT_TYPE
+        description: "Type of inventory movement."
+        tests:
+          - accepted_values:
+              values: ['replenishment', 'outbound', 'adjustment']
+
+  - name: stg_customer_orders
+    description: "Staging model for customer orders data."
+    columns:
+      - name: ORDER_ID
+        description: "Unique identifier for customer order."
+        tests:
+          - unique
+          - not_null
+      - name: PRODUCT_ID
+        description: "Identifier of the product ordered."
+        tests:
+          - not_null
+          - relationships:
+              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("products", this) }}')
+              field: PRODUCT_ID
+      - name: WAREHOUSE_ID
+        description: "Warehouse fulfilling the order."
+        tests:
+          - not_null
+          - relationships:
+              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("warehouses", this) }}')
+              field: WAREHOUSE_ID
+      - name: ORDER_DATE
+        description: "Date of the customer order."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type:
+              column_type: date
+      - name: QUANTITY
+        description: "Number of units ordered."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 100
+      - name: SALES_CHANNEL
+        description: "Sales channel of the order."
+        tests:
+          - accepted_values:
+              values: ['online', 'retail', 'wholesale']
+
+  - name: daily_inventory_snapshot
+    description: "Daily snapshot combining inventory and orders data."
+    columns:
+      - name: movement_date
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type:
+              column_type: date
+      - name: product_id
+        tests:
+          - not_null
+      - name: warehouse_id
+        tests:
+          - not_null
+      - name: qty_replenished
+        tests:
+          - not_null
+      - name: qty_shipped
+        tests:
+          - not_null
+      - name: net_inventory_change
+        tests:
+          - not_null
+
+  - name: daily_inventory_kpis
+    description: "Daily aggregated inventory KPIs for business analytics."
+    columns:
+      - name: report_date
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type:
+              column_type: date
+      - name: warehouse_name
+        tests:
+          - not_null
+      - name: product_name
+        tests:
+          - not_null
+      - name: total_orders
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1000
+      - name: total_units_shipped
+        tests:
+          - not_null
+      - name: stock_turnover_ratio
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
