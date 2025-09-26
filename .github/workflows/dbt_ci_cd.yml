@@ -1,16 +1,3 @@
-name: DBT CI/CD Pipeline Validation
-
-on:
-  push:
-    tags:
-      - 'pipeline validation'
-    branches:
-      - main
-      - develop
-      - 'feature/*'
-  issues:
-    types: [labeled, closed]
-
 jobs:
   deploy_and_validate_pipeline:
     runs-on: ubuntu-latest
@@ -21,19 +8,33 @@ jobs:
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
       SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-      GITHUB_ISSUE_ID: ${{ github.event.issue.number || 'no_issue' }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ensure tags/branches are available
 
       - name: Setup Python Environment
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Install CLI tools used by workflow
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
       - name: Install Python Dependencies
         run: pip install -r scripts/python/requirements.txt
+
+      - name: Set safe GITHUB_ISSUE_ID for all events
+        run: |
+          if [ "${{ github.event_name }}" = "issues" ] && [ -n "${{ github.event.issue.number }}" ]; then
+            echo "GITHUB_ISSUE_ID=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          else
+            echo "GITHUB_ISSUE_ID=no_issue" >> $GITHUB_ENV
+          fi
 
       - name: Run Pre-commit Checks (Code Quality & Security)
         run: pre-commit run --all-files
@@ -41,16 +42,16 @@ jobs:
       - name: Determine DBT Target Schema and Environment
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "DBT_TARGET_SCHEMA=prod" >> $GITHUB_ENV
-            echo "DBT_ENVIRONMENT=prod" >> $GITHUB_ENV
+            echo "DBT_TARGET_SCHEMA=prod"   >> $GITHUB_ENV
+            echo "DBT_ENVIRONMENT=prod"    >> $GITHUB_ENV
           elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            echo "DBT_TARGET_SCHEMA=dev" >> $GITHUB_ENV
-            echo "DBT_ENVIRONMENT=dev" >> $GITHUB_ENV
+            echo "DBT_TARGET_SCHEMA=dev"    >> $GITHUB_ENV
+            echo "DBT_ENVIRONMENT=dev"      >> $GITHUB_ENV
           else
-            ISSUE_ID=${{ env.GITHUB_ISSUE_ID }}
+            ISSUE_ID="${{ env.GITHUB_ISSUE_ID }}"
             SCHEMA_NAME="feature_${ISSUE_ID}"
             echo "DBT_TARGET_SCHEMA=${SCHEMA_NAME}" >> $GITHUB_ENV
-            echo "DBT_ENVIRONMENT=ci_cd" >> $GITHUB_ENV
+            echo "DBT_ENVIRONMENT=ci_cd"             >> $GITHUB_ENV
           fi
 
       - name: Handle Feature Request Automation
@@ -69,13 +70,12 @@ jobs:
           echo "OBJECT_NAME=${OBJECT_NAME}" >> $GITHUB_ENV
           python scripts/python/drop_schema.py "${OBJECT_NAME}" "${ISSUE_ID}"
 
-
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 
       - name: Update DBT Profiles Dynamically
         run: |
-          cat << EOF > scripts/dbt/profiles.yml
+          cat << 'EOF' > scripts/dbt/profiles.yml
           logistics_demo:
             outputs:
               prod:
@@ -111,22 +111,29 @@ jobs:
             target: "{{ env_var('DBT_ENVIRONMENT', 'ci_cd') }}"
           EOF
 
+      # --- DBT steps always run from project dir and use explicit profiles-dir ---
+      - name: Verify DBT/macros are discoverable
+        working-directory: scripts/dbt
+        run: |
+          dbt --version
+          dbt ls --resource-type macro --profiles-dir . | grep -E 'generate_schema_name|generate_alias_name'
+
       - name: Run DBT Seed Data Load
         working-directory: scripts/dbt
         run: |
           dbt deps
-          dbt seed --profiles-dir ./
+          dbt seed --profiles-dir . --project-dir .
 
       - name: Run DBT Models and Tests
         working-directory: scripts/dbt
         run: |
-          dbt run --profiles-dir ./
-          dbt test --profiles-dir ./
+          dbt run  --profiles-dir . --project-dir .
+          dbt test --profiles-dir . --project-dir .
 
       - name: Generate DBT Documentation
         working-directory: scripts/dbt
         run: |
-          dbt docs generate --profiles-dir ./
+          dbt docs generate --profiles-dir . --project-dir .
 
       - name: Upload DBT Documentation Artifact
         uses: actions/upload-artifact@v4
@@ -157,36 +164,29 @@ jobs:
         uses: slackapi/slack-github-action@v1.26.0
         env:
           FEATURE_NAME: ${{ env.FEATURE_NAME }}
-        with:
-          payload: |
-            {
-              "text": "✅ Created schema/object: `${{ env.FEATURE_NAME }}` (Issue #${{ github.event.issue.number }})"
-            }
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        with:
+          payload: |
+            {"text":"✅ Created schema/object: `${{ env.FEATURE_NAME }}` (Issue #${{ github.event.issue.number }})"}
 
       - name: Slack Notify on Schema/Object Deletion
         if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'cleanup')
         uses: slackapi/slack-github-action@v1.26.0
         env:
           OBJECT_NAME: ${{ env.OBJECT_NAME }}
-        with:
-          payload: |
-            {
-              "text": "🧹 Explicitly deleted schema/object: `${{ env.OBJECT_NAME }}` (Issue #${{ github.event.issue.number }})"
-            }
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-
+        with:
+          payload: |
+            {"text":"🧹 Explicitly deleted schema/object: `${{ env.OBJECT_NAME }}` (Issue #${{ github.event.issue.number }})"}
 
       - name: Notify via Slack on Pipeline Failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
-        with:
-          payload: |
-            {
-              "text": "🚨 DBT pipeline validation failed for schema `${{ env.DBT_TARGET_SCHEMA }}`. Immediate attention required."
-            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        with:
+          payload: |
+            {"text":"🚨 DBT pipeline validation failed for schema `${{ env.DBT_TARGET_SCHEMA }}`. Immediate attention required."}
