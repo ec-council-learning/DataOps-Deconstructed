@@ -133,25 +133,25 @@ jobs:
       - name: Verify DBT project (parse/compile)
         working-directory: scripts/dbt
         run: |
-          dbt parse   --profiles-dir . --project-dir .
-          dbt compile --profiles-dir . --project-dir .
+          dbt parse   --profiles-dir .
+          dbt compile --profiles-dir .
 
       - name: Run DBT Seed Data Load
         working-directory: scripts/dbt
         run: |
           dbt deps
-          dbt seed --profiles-dir . --project-dir .
+          dbt seed --profiles-dir . 
 
       - name: Run DBT Models and Tests
         working-directory: scripts/dbt
         run: |
-          dbt run  --profiles-dir . --project-dir .
-          dbt test --profiles-dir . --project-dir .
+          dbt run  --profiles-dir . 
+          dbt test --profiles-dir . 
 
       - name: Generate DBT Documentation
         working-directory: scripts/dbt
         run: |
-          dbt docs generate --profiles-dir . --project-dir .
+          dbt docs generate --profiles-dir .
 
       - name: Upload DBT Documentation Artifact
         uses: actions/upload-artifact@v4
