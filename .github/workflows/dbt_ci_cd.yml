@@ -125,6 +125,17 @@ jobs:
             target: "{{ env_var('DBT_ENVIRONMENT', 'ci_cd') }}"
           EOF
 
+      - name: Install dbt packages
+        working-directory: scripts/dbt
+        run: |
+          dbt deps
+
+      - name: Verify DBT project (parse/compile)
+        working-directory: scripts/dbt
+        run: |
+          dbt parse   --profiles-dir . --project-dir .
+          dbt compile --profiles-dir . --project-dir .
+
       - name: Run DBT Seed Data Load
         working-directory: scripts/dbt
         run: |
