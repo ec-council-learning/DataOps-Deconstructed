@@ -7,4 +7,4 @@ SELECT
     MOVEMENT_DATE,
     QUANTITY,
     MOVEMENT_TYPE
-FROM {{ source('bronze', 'inventory_movements') }}
+FROM {{ ref('inventory_movements') }}

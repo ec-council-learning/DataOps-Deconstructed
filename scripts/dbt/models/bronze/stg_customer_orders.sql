@@ -7,4 +7,4 @@ SELECT
     ORDER_DATE,
     QUANTITY,
     SALES_CHANNEL
-FROM {{ source('bronze', 'customer_orders') }}
+FROM {{ ref('customer_orders') }}
