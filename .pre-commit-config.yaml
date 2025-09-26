@@ -107,5 +107,4 @@ repos:
       - id: detect-secrets
         name: detect-secrets (secret scanner)
         # Run with default settings. Baseline scanning is disabled to prevent path errors.
-
   # The markdownlint hook has been removed to reduce noise from long lines in documentation.
