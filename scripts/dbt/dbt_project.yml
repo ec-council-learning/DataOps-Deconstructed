@@ -12,14 +12,11 @@ macro-paths: ["macros"]
 models:
   logistics_demo:
     bronze:
-      schema: bronze
-      alias: "{{ this.name }}"
-      materialized: view
+      +schema: bronze
+      +materialized: view
     silver:
-      schema: silver
-      alias: "{{ this.name }}"
-      materialized: table
+      +schema: silver
+      +materialized: table
     gold:
-      schema: gold
-      alias: "{{ this.name }}"
-      materialized: table
+      +schema: gold
+      +materialized: table
