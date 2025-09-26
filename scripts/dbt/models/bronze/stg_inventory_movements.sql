@@ -7,4 +7,4 @@ SELECT
     MOVEMENT_DATE,
     QUANTITY,
     MOVEMENT_TYPE
-FROM {{ source(generate_schema_name('bronze', this), generate_alias_name('inventory_movements', this)) }}
+FROM {{ source('bronze', 'inventory_movements') }}

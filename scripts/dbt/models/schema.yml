@@ -1,10 +1,10 @@
 version: 2
 
 sources:
-  - name: "{{ generate_schema_name('bronze', this) }}"
+  - name: "bronze"
     tables:
-      - name: "{{ generate_alias_name('inventory_movements', this) }}"
-      - name: "{{ generate_alias_name('customer_orders', this) }}"
+      - name: "inventory_movements"
+      - name: "customer_orders"
 
 models:
   - name: stg_inventory_movements
@@ -20,14 +20,14 @@ models:
         tests:
           - not_null
           - relationships:
-              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("products", this) }}')
+              to: source('master_data', 'products')
               field: PRODUCT_ID
       - name: WAREHOUSE_ID
         description: "Identifier of the warehouse."
         tests:
           - not_null
           - relationships:
-              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("warehouses", this) }}')
+              to: source('master_data', 'warehouses')
               field: WAREHOUSE_ID
       - name: MOVEMENT_DATE
         description: "Date of the inventory movement."
@@ -61,14 +61,14 @@ models:
         tests:
           - not_null
           - relationships:
-              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("products", this) }}')
+              to: source('master_data', 'products')
               field: PRODUCT_ID
       - name: WAREHOUSE_ID
         description: "Warehouse fulfilling the order."
         tests:
           - not_null
           - relationships:
-              to: source('{{ generate_schema_name("master_data", this) }}', '{{ generate_alias_name("warehouses", this) }}')
+              to: source('master_data', 'warehouses')
               field: WAREHOUSE_ID
       - name: ORDER_DATE
         description: "Date of the customer order."

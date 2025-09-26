@@ -39,7 +39,7 @@ LEFT JOIN orders ord
   ON inv.movement_date = ord.movement_date
   AND inv.warehouse_id = ord.warehouse_id
   AND inv.product_id = ord.product_id
-LEFT JOIN {{ source(generate_schema_name('master_data', this), generate_alias_name('products', this)) }} prd
+LEFT JOIN {{ source('master_data', 'products') }} prd
   ON inv.product_id = prd.product_id
-LEFT JOIN {{ source(generate_schema_name('master_data', this), generate_alias_name('warehouses', this)) }} wh
+LEFT JOIN {{ source('master_data', 'warehouses') }} wh
   ON inv.warehouse_id = wh.warehouse_id

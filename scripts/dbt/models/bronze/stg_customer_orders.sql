@@ -7,4 +7,4 @@ SELECT
     ORDER_DATE,
     QUANTITY,
     SALES_CHANNEL
-FROM {{ source(generate_schema_name('bronze', this), generate_alias_name('customer_orders', this)) }}
+FROM {{ source('bronze', 'customer_orders') }}
