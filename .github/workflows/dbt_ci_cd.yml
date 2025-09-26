@@ -140,13 +140,13 @@ jobs:
         working-directory: scripts/dbt
         run: |
           dbt deps
-          dbt seed --profiles-dir . 
+          dbt seed --profiles-dir .
 
       - name: Run DBT Models and Tests
         working-directory: scripts/dbt
         run: |
-          dbt run  --profiles-dir . 
-          dbt test --profiles-dir . 
+          dbt run  --profiles-dir .
+          dbt test --profiles-dir .
 
       - name: Generate DBT Documentation
         working-directory: scripts/dbt
