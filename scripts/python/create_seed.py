@@ -36,8 +36,9 @@ def generate_products() -> None:
         )
         for i in range(NUM_ROWS):
             product_id = f"PRD{i + 1:05d}"
+            # Non‑unique word prevents UniquenessException. Unique identity comes from product_id.
             product_name = (
-                f"{fake.unique.word().title()} "
+                f"{fake.word().title()} "
                 f"{random.choice(['Pro', 'Max', 'Lite', 'Standard'])}"
             )
             category = random.choice(categories)
@@ -49,15 +50,9 @@ def generate_products() -> None:
                 f"{random.randint(5, 100)}"
             )
             writer.writerow(
-                [
-                    product_id,
-                    product_name,
-                    category,
-                    unit_cost,
-                    weight_kg,
-                    dimensions_cm,
-                ]
+                [product_id, product_name, category, unit_cost, weight_kg, dimensions_cm]
             )
+
 
 
 def generate_warehouses() -> None:
