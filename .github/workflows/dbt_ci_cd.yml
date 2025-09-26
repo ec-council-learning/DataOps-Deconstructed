@@ -125,25 +125,6 @@ jobs:
             target: "{{ env_var('DBT_ENVIRONMENT', 'ci_cd') }}"
           EOF
 
-      - name: Verify macros presence & load
-        run: |
-          set -e
-          echo "Listing macros dir:"
-          ls -la scripts/dbt/macros || true
-          echo "Showing dynamic_naming.sql header:"
-          sed -n '1,120p' scripts/dbt/macros/dynamic_naming.sql
-
-          echo "dbt version"
-          dbt --version
-
-          # Parse the project — will fail if project-dir/profiles-dir are off.
-          dbt parse --project-dir scripts/dbt --profiles-dir scripts/dbt
-
-          # Prove macros are importable by calling one.
-          # get_issue_id() takes no args, so it's a perfect canary:
-          dbt run-operation get_issue_id --project-dir scripts/dbt --profiles-dir scripts/dbt
-
-
       - name: Run DBT Seed Data Load
         working-directory: scripts/dbt
         run: |
