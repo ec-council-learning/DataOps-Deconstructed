@@ -125,11 +125,14 @@ jobs:
           EOF
 
       # --- DBT steps always run from project dir and use explicit profiles-dir ---
-      - name: Verify DBT/macros are discoverable
+      - name: Verify DBT project (parse/compile)
         working-directory: scripts/dbt
         run: |
           dbt --version
-          dbt ls --resource-type macro --profiles-dir . | grep -E 'generate_schema_name|generate_alias_name'
+          # Parse/compile the project to ensure macros & jinja render correctly.
+          # This will fail fast if generate_schema_name / generate_alias_name are undefined.
+          dbt parse   --profiles-dir . --project-dir .
+          dbt compile --profiles-dir . --project-dir .
 
       - name: Run DBT Seed Data Load
         working-directory: scripts/dbt
