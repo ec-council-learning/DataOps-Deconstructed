@@ -1,3 +1,16 @@
+name: DBT CI/CD Pipeline Validation
+
+on:
+  push:
+    tags:
+      - 'pipeline validation'
+    branches:
+      - main
+      - develop
+      - 'feature/*'
+  issues:
+    types: [labeled, closed]
+
 jobs:
   deploy_and_validate_pipeline:
     runs-on: ubuntu-latest
