@@ -50,9 +50,15 @@ def generate_products() -> None:
                 f"{random.randint(5, 100)}"
             )
             writer.writerow(
-                [product_id, product_name, category, unit_cost, weight_kg, dimensions_cm]
+                [
+                    product_id,
+                    product_name,
+                    category,
+                    unit_cost,
+                    weight_kg,
+                    dimensions_cm,
+                ]
             )
-
 
 
 def generate_warehouses() -> None:
