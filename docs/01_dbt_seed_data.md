@@ -138,5 +138,3 @@ Ensure all Python dependencies are explicitly installed by executing:
 ```bash
 pip install -r scripts/requirements.txt
 ```
-
-

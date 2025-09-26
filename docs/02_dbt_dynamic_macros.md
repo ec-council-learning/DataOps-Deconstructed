@@ -109,4 +109,3 @@ This explicit definition ensures dynamic naming is correctly applied, for exampl
 * **Clear isolation** of DBT schemas and models explicitly per GitHub issue or feature branch.
 * **Enhanced governance and observability**, providing explicit traceability of changes.
 * **Simplified pipeline automation** explicitly managed via GitHub Actions workflows.
-
