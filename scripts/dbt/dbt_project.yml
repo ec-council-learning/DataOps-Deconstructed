@@ -12,14 +12,14 @@ macro-paths: ["macros"]
 models:
   logistics_demo:
     bronze:
-      schema: "{{ generate_schema_name('bronze', this) }}"
-      alias: "{{ generate_alias_name(this.name, this) }}"
+      schema: bronze
+      alias: "{{ this.name }}"
       materialized: view
     silver:
-      schema: "{{ generate_schema_name('silver', this) }}"
-      alias: "{{ generate_alias_name(this.name, this) }}"
+      schema: silver
+      alias: "{{ this.name }}"
       materialized: table
     gold:
-      schema: "{{ generate_schema_name('gold', this) }}"
-      alias: "{{ generate_alias_name(this.name, this) }}"
+      schema: gold
+      alias: "{{ this.name }}"
       materialized: table
