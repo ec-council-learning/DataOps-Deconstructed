@@ -121,11 +121,19 @@ jobs:
           echo "Creating schema/object: ${FEATURE_SCHEMA}"
           python scripts/python/create_schema.py "${{ github.event.issue.number }}"
 
+      - name: Debug gate values
+        if: ${{ always() }}
+        run: |
+          echo "proceed=${{ needs.gate.outputs.proceed }}"
+          echo "run_security=${{ needs.gate.outputs.run_security }}"
+          echo "run_observability=${{ needs.gate.outputs.run_observability }}"
+
+
   # ---------------- Security → ELT → Observability (strict) ----------------
   security:
     name: "🔒 Security SAST"
     needs: [resolve_context, provision_feature, gate]
-    if: needs.gate.outputs.run_security == 'yes'
+    if: ${{ needs.gate.outputs.proceed == 'true' && needs.gate.outputs.run_security == 'yes' }}
     permissions:
       contents: read
       actions: read
@@ -141,9 +149,9 @@ jobs:
   pipelines:
     name: "🛠️ Medallion ELT"
     needs: [security, resolve_context, provision_feature, gate]
-    if: |
-      needs.gate.outputs.proceed == 'true' &&
-      (needs.security.result == 'success' || needs.security.result == 'skipped')
+    if: ${{ needs.gate.outputs.proceed == 'true' && (
+            needs.gate.outputs.run_security != 'yes' || needs.security.result == 'success'
+          ) }}
     uses: ./.github/workflows/data_pipeline.yml
     with:
       environment: ${{ needs.resolve_context.outputs.environment }}
@@ -154,14 +162,14 @@ jobs:
   observability:
     name: "📊 Observability Metrics"
     needs: [pipelines, resolve_context, provision_feature, gate]
-    if: |
-      needs.gate.outputs.run_observability == 'yes' &&
-      needs.pipelines.result == 'success'
+    if: ${{ needs.gate.outputs.proceed == 'true' &&
+           needs.gate.outputs.run_observability == 'yes' &&
+           needs.pipelines.result == 'success' }}
     permissions:
       contents: read
       pages: write
       id-token: write
-    uses: ./.github/workflows/observability.yml
+    uses: ./.github/workflows/observability_metrics.yml
     with:
       environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
