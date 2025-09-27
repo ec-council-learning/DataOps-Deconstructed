@@ -65,7 +65,7 @@ jobs:
     name: "Security SAST"
     needs: resolve-context
     if: needs.resolve-context.outputs.run_security == 'yes'
-    permissions:                    # 👈 grant what security.yml requests
+    permissions:
       contents: read
       actions: read
       pull-requests: write
@@ -96,7 +96,7 @@ jobs:
     if: |
       needs.resolve-context.outputs.run_observability == 'yes' &&
       needs.pipelines.result == 'success'
-    permissions:                    # 👈 match observability_metrics.yml
+    permissions:
       contents: read
       pages: write
       id-token: write
