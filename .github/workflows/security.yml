@@ -179,7 +179,7 @@ jobs:
           retention-days: 7
 
       - name: Slack — failure summary (skips on forks)
-        if: failure() && env.IS_FORK != 'true' && secrets.SLACK_WEBHOOK_URL != ''
+        if: failure() && env.IS_FORK != 'true' && env.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
@@ -189,7 +189,7 @@ jobs:
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
       - name: Slack — success (optional, skips on forks)
-        if: success() && env.IS_FORK != 'true' && secrets.SLACK_WEBHOOK_URL != ''
+        if: success() && env.IS_FORK != 'true' && env.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
