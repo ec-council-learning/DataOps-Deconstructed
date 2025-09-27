@@ -9,7 +9,7 @@ on:
       - develop
       - 'feature/*'
   issues:
-    types: [labeled, closed, opened, synchronize, reopened, ready_for_review]
+    types: [labeled, closed, opened, locked, reopened, unlocked]
 
 concurrency:
   group: orchestrator-${{ github.ref }}
@@ -67,8 +67,6 @@ jobs:
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
-      requirements_path: "requirements/security.txt"        # <— add this
-    secrets: inherit
 
   pipelines:
     needs: [resolve-context, security]
@@ -80,7 +78,6 @@ jobs:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/requirements.txt"  # <— add this
-    secrets: inherit
 
   observability:
     needs: [resolve-context, pipelines]
@@ -92,7 +89,6 @@ jobs:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
       requirements_path: "requirements/observability.txt"   # <— add this
-    secrets: inherit
 
   notify:
     needs: [resolve-context, security, pipelines, observability]
@@ -125,7 +121,7 @@ jobs:
           payload: |
             {
               "blocks": [
-                { "type":"header", "text": { "type":"plain_text", "text": "${{ steps.sum.outputs.overall == 'success' ? '✅ Orchestration Succeeded' : '🚨 Orchestration Failed' }}" } },
+                { "type":"header", "text": { "type":"plain_text", "text": "${{ steps.sum.outputs.overall == 'success' && '✅ Orchestration Succeeded' || '🚨 Orchestration Failed' }}" } },
                 { "type":"section", "fields": [
                   { "type":"mrkdwn", "text":"*Environment:* `${{ steps.sum.outputs.env }}`" },
                   { "type":"mrkdwn", "text":"*Branch/Ref:* `${{ steps.sum.outputs.branch }}`" },

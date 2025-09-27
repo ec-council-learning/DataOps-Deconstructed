@@ -11,10 +11,10 @@ on:
         description: "Optional flags or selectors"
         required: false
         type: string
-    requirements_path:                      
+      requirements_path:
         description: "Path to Python requirements file"
         required: false
-        type: string        
+        type: string
     secrets:
       SNOWFLAKE_ACCOUNT:
         required: false
