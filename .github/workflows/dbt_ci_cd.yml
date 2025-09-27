@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # Snowflake
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
       SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
@@ -26,9 +27,9 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # ensure tags/branches are available
+          fetch-depth: 0
 
-      - name: Setup Python Environment
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -41,7 +42,7 @@ jobs:
       - name: Install Python Dependencies
         run: pip install -r scripts/python/requirements.txt
 
-      - name: Set safe GITHUB_ISSUE_ID for all events
+      - name: Set GITHUB_ISSUE_ID safely for any event
         run: |
           if [ "${{ github.event_name }}" = "issues" ] && [ -n "${{ github.event.issue.number }}" ]; then
             echo "GITHUB_ISSUE_ID=${{ github.event.issue.number }}" >> $GITHUB_ENV
@@ -58,8 +59,8 @@ jobs:
             echo "DBT_TARGET_SCHEMA=prod"   >> $GITHUB_ENV
             echo "DBT_ENVIRONMENT=prod"    >> $GITHUB_ENV
           elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            echo "DBT_TARGET_SCHEMA=dev"    >> $GITHUB_ENV
-            echo "DBT_ENVIRONMENT=dev"      >> $GITHUB_ENV
+            echo "DBT_TARGET_SCHEMA=dev"   >> $GITHUB_ENV
+            echo "DBT_ENVIRONMENT=dev"     >> $GITHUB_ENV
           else
             ISSUE_ID="${{ env.GITHUB_ISSUE_ID }}"
             SCHEMA_NAME="feature_${ISSUE_ID}"
@@ -67,6 +68,7 @@ jobs:
             echo "DBT_ENVIRONMENT=ci_cd"             >> $GITHUB_ENV
           fi
 
+      # --- Optional issue-driven automation ---
       - name: Handle Feature Request Automation
         if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'feature')
         run: |
@@ -83,63 +85,36 @@ jobs:
           echo "OBJECT_NAME=${OBJECT_NAME}" >> $GITHUB_ENV
           python scripts/python/drop_schema.py "${OBJECT_NAME}" "${ISSUE_ID}"
 
+      # Generate seeds via Python
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 
-      - name: Update DBT Profiles Dynamically
-        run: |
-          cat << 'EOF' > scripts/dbt/profiles.yml
-          logistics_demo:
-            outputs:
-              prod:
-                type: snowflake
-                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
-                user: "{{ env_var('SNOWFLAKE_USER') }}"
-                password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
-                role: "{{ env_var('SNOWFLAKE_ROLE') }}"
-                warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
-                database: LOGISTICS_DEMO
-                schema: prod
-                threads: 4
-              dev:
-                type: snowflake
-                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
-                user: "{{ env_var('SNOWFLAKE_USER') }}"
-                password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
-                role: "{{ env_var('SNOWFLAKE_ROLE') }}"
-                warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
-                database: LOGISTICS_DEMO
-                schema: dev
-                threads: 4
-              ci_cd:
-                type: snowflake
-                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
-                user: "{{ env_var('SNOWFLAKE_USER') }}"
-                password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
-                role: "{{ env_var('SNOWFLAKE_ROLE') }}"
-                warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
-                database: LOGISTICS_DEMO
-                schema: "{{ env_var('DBT_TARGET_SCHEMA', 'default') }}"
-                threads: 4
-            target: "{{ env_var('DBT_ENVIRONMENT', 'ci_cd') }}"
-          EOF
-
+      # --- DBT: always from project dir, using repo's profiles.yml ---
       - name: Install dbt packages
         working-directory: scripts/dbt
+        run: dbt deps
+
+      # Guardrails & clean cache (fail fast if a macro call is reintroduced)
+      - name: Guardrails & clean cache
         run: |
-          dbt deps
+          echo "Active dbt_project.yml:"
+          sed -n '1,200p' scripts/dbt/dbt_project.yml
+          if grep -n "generate_schema_name(" scripts/dbt/dbt_project.yml; then
+            echo "dbt_project.yml still calls generate_schema_name(). Fail."; exit 1; fi
+          if grep -n "generate_alias_name(" scripts/dbt/dbt_project.yml; then
+            echo "dbt_project.yml still calls generate_alias_name(). Fail."; exit 1; fi
+          rm -rf scripts/dbt/target
 
       - name: Verify DBT project (parse/compile)
         working-directory: scripts/dbt
         run: |
-          dbt parse   --profiles-dir .
+          dbt --version
+          dbt parse   --profiles-dir . --no-partial-parse
           dbt compile --profiles-dir .
 
       - name: Run DBT Seed Data Load
         working-directory: scripts/dbt
-        run: |
-          dbt deps
-          dbt seed --profiles-dir .
+        run: dbt seed --profiles-dir .
 
       - name: Run DBT Models and Tests
         working-directory: scripts/dbt
@@ -149,8 +124,7 @@ jobs:
 
       - name: Generate DBT Documentation
         working-directory: scripts/dbt
-        run: |
-          dbt docs generate --profiles-dir .
+        run: dbt docs generate --profiles-dir .
 
       - name: Upload DBT Documentation Artifact
         uses: actions/upload-artifact@v4
@@ -176,6 +150,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./
 
+      # --- Slack notifications (unchanged) ---
       - name: Slack Notify on Schema/Object Creation
         if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'feature')
         uses: slackapi/slack-github-action@v1.26.0

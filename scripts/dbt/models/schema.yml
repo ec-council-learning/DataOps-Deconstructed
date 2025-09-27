@@ -20,14 +20,14 @@ models:
         tests:
           - not_null
           - relationships:
-              to: source('master_data', 'products')
+              to: ref('products')
               field: PRODUCT_ID
       - name: WAREHOUSE_ID
         description: "Identifier of the warehouse."
         tests:
           - not_null
           - relationships:
-              to: source('master_data', 'warehouses')
+              to: ref('warehouses')
               field: WAREHOUSE_ID
       - name: MOVEMENT_DATE
         description: "Date of the inventory movement."
@@ -61,14 +61,14 @@ models:
         tests:
           - not_null
           - relationships:
-              to: source('master_data', 'products')
+              to: ref('products')
               field: PRODUCT_ID
       - name: WAREHOUSE_ID
         description: "Warehouse fulfilling the order."
         tests:
           - not_null
           - relationships:
-              to: source('master_data', 'warehouses')
+              to: ref('warehouses')
               field: WAREHOUSE_ID
       - name: ORDER_DATE
         description: "Date of the customer order."
