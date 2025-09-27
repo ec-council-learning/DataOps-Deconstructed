@@ -89,6 +89,11 @@ jobs:
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 
+      # --- DBT: always from project dir, using repo's profiles.yml ---
+      - name: Install dbt packages
+        working-directory: scripts/dbt
+        run: dbt deps
+
       - name: Verify DBT project (parse/compile)
         working-directory: scripts/dbt
         run: |
