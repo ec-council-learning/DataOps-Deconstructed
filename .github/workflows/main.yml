@@ -63,7 +63,7 @@ jobs:
   security:
     needs: resolve-context
     if: needs.resolve-context.outputs.run_security == 'yes'
-    uses: .github/workflows/security_scan.yml
+    uses: ./.github/workflows/security_scan.yml
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
@@ -75,7 +75,7 @@ jobs:
     if: |
       (needs.resolve-context.result == 'success') &&
       (needs.security.result == 'success' || needs.security.result == 'skipped')
-    uses: .github/workflows/data_pipelines.yml
+    uses: ./.github/workflows/data_pipelines.yml
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
@@ -87,7 +87,7 @@ jobs:
     if: |
       needs.resolve-context.outputs.run_observability == 'yes' &&
       (needs.pipelines.result == 'success')
-    uses: .github/workflows/observability_metrics.yml
+    uses: ./.github/workflows/observability_metrics.yml
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
