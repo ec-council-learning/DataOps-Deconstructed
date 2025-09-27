@@ -26,7 +26,7 @@ env:
   SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 jobs:
-  resolve-context:
+  resolve_context:
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.resolve.outputs.environment }}
@@ -61,10 +61,37 @@ jobs:
           echo "run_security=$RUN_SEC" >> $GITHUB_OUTPUT
           echo "run_observability=$RUN_OBS" >> $GITHUB_OUTPUT
 
+  provision_feature:
+    name: "Provision Feature Schema"
+    needs: resolve_context
+    if: >
+      github.event_name == 'issues' &&
+      contains(github.event.issue.labels.*.name, 'feature')
+    runs-on: ubuntu-latest
+    outputs:
+      feature_schema: ${{ steps.get-name.outputs.feature_schema }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse feature schema/object name
+        id: get-name
+        run: |
+          FEATURE_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" \
+            | grep -i 'Schema/Object Name' | cut -d':' -f2 | xargs | tr '-' '_' )
+          echo "feature_schema=$FEATURE_NAME" >> "$GITHUB_OUTPUT"
+          echo "FEATURE_SCHEMA=$FEATURE_NAME" >> "$GITHUB_ENV"
+
+      - name: Create schema/object
+        run: |
+          echo "Creating schema/object: ${FEATURE_SCHEMA}"
+          python scripts/python/create_schema.py "${{ github.event.issue.number }}"
+
+
   security:
     name: "Security SAST"
-    needs: resolve-context
-    if: needs.resolve-context.outputs.run_security == 'yes'
+    needs: [resolve_context, provision_feature]
+    if: needs.resolve_context.outputs.run_security == 'yes'
     permissions:
       contents: read
       actions: read
@@ -72,29 +99,29 @@ jobs:
       security-events: write
     uses: ./.github/workflows/security.yml
     with:
-      environment: ${{ needs.resolve-context.outputs.environment }}
+      environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/sec.req.txt"
     secrets: inherit # pragma: allowlist secret
 
   pipelines:
     name: "Medallion ELT"
-    needs: [security, resolve-context]
+    needs: [security, resolve_context, provision_feature]
     if: |
-      needs.resolve-context.result == 'success' &&
+      needs.resolve_context.result == 'success' &&
       (needs.security.result == 'success' || needs.security.result == 'skipped')
     uses: ./.github/workflows/data_pipeline.yml
     with:
-      environment: ${{ needs.resolve-context.outputs.environment }}
+      environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/elt.req.txt"
     secrets: inherit # pragma: allowlist secret
 
   observability:
     name: "Observability Metrics"
-    needs: [pipelines, resolve-context]
+    needs: [pipelines, resolve_context, provision_feature]
     if: |
-      needs.resolve-context.outputs.run_observability == 'yes' &&
+      needs.resolve_context.outputs.run_observability == 'yes' &&
       needs.pipelines.result == 'success'
     permissions:
       contents: read
@@ -102,23 +129,73 @@ jobs:
       id-token: write
     uses: ./.github/workflows/observability.yml
     with:
-      environment: ${{ needs.resolve-context.outputs.environment }}
+      environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/obs.req.txt"
       master_schema: "master_data"
     secrets: inherit # pragma: allowlist secret
 
+  manual_cleanup:
+    name: "Manual Cleanup (Issue)"
+    needs: resolve-context
+    if: >
+      github.event_name == 'issues' &&
+      contains(github.event.issue.labels.*.name, 'cleanup')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse object name to delete
+        run: |
+          OBJECT_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" \
+            | grep -i 'Schema/Object Name to Delete' | cut -d':' -f2 | xargs | tr '-' '_' )
+          echo "OBJECT_NAME=$OBJECT_NAME" >> "$GITHUB_ENV"
+
+      - name: Drop schema/object
+        run: |
+          python scripts/python/drop_schema.py "${OBJECT_NAME}" "${{ github.event.issue.number }}"
+
+  cleanup_on_failure:
+    name: "Auto Cleanup (on failure/cancel)"
+    needs:
+      - resolve-context
+      - provision_feature
+      - security
+      - pipelines
+      - observability
+    if: >
+      always() &&
+      needs.provision_feature.outputs.feature_schema != '' &&
+      (needs.security.result == 'failure' ||
+       needs.pipelines.result == 'failure' ||
+       needs.observability.result == 'failure' ||
+       cancelled())
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Drop provisioned schema/object
+        env:
+          FEATURE_SCHEMA: ${{ needs.provision_feature.outputs.feature_schema }}
+        run: |
+          echo "Attempting rollback of schema/object: ${FEATURE_SCHEMA}"
+          # Use run_id as the "reason" or match your drop script’s signature
+          python scripts/python/drop_schema.py "${FEATURE_SCHEMA}" "${{ github.run_id }}"
+
+
   notify:
-    needs: [resolve-context, security, pipelines, observability]
+    needs: [resolve_context, security, pipelines, observability]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Compose summary
         id: sum
         run: |
-          SEC=${{ needs.resolve-context.outputs.run_security == 'yes' && needs.security.result || 'skipped' }}
+          SEC=${{ needs.resolve_context.outputs.run_security == 'yes' && needs.security.result || 'skipped' }}
           PIPE=${{ needs.pipelines.result }}
-          OBS=${{ needs.resolve-context.outputs.run_observability == 'yes' && needs.observability.result || 'skipped' }}
+          OBS=${{ needs.resolve_context.outputs.run_observability == 'yes' && needs.observability.result || 'skipped' }}
 
           OVERALL=success
           [[ "$SEC" == "failure" || "$PIPE" == "failure" || "$OBS" == "failure" ]] && OVERALL=failure
@@ -129,7 +206,7 @@ jobs:
           echo "observability=$OBS" >> $GITHUB_OUTPUT
           echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
           echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "env=${{ needs.resolve-context.outputs.environment }}" >> $GITHUB_OUTPUT
+          echo "env=${{ needs.resolve_context.outputs.environment }}" >> $GITHUB_OUTPUT
           echo "event=${{ github.event_name }}" >> $GITHUB_OUTPUT
 
       - name: Slack — Orchestration Summary
