@@ -174,7 +174,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    uses: ./.github/workflows/observability_metrics.yml
+    uses: ./.github/workflows/observability.yml
     with:
       environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
@@ -256,7 +256,7 @@ jobs:
         with:
           payload: |
             {
-              "blocks": [
+              "blocks": [#orchestrate
                 { "type":"header", "text": { "type":"plain_text", "text": "${{ steps.sum.outputs.overall == 'success' && '✅ Orchestration Succeeded' || '🚨 Orchestration Failed' }}" } },
                 { "type":"section", "fields": [
                   { "type":"mrkdwn", "text":"*Environment:* `${{ steps.sum.outputs.env }}`" },
