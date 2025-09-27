@@ -65,6 +65,11 @@ jobs:
     name: "Security SAST"
     needs: resolve-context
     if: needs.resolve-context.outputs.run_security == 'yes'
+    permissions:                    # 👈 grant what security.yml requests
+      contents: read
+      actions: read
+      pull-requests: write
+      security-events: write
     uses: ./.github/workflows/security.yml
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
@@ -91,6 +96,10 @@ jobs:
     if: |
       needs.resolve-context.outputs.run_observability == 'yes' &&
       needs.pipelines.result == 'success'
+    permissions:                    # 👈 match observability_metrics.yml
+      contents: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/observability.yml
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
