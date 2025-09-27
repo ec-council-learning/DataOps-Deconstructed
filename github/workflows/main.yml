@@ -12,7 +12,7 @@ on:
       - 'pipeline validation'
   issues:
     types: [labeled, reopened, opened, unlocked]
-  workflow_dispatch: {}   # still allows manual dispatch if needed
+  workflow_dispatch: {}
 
 concurrency:
   group: orchestrator-${{ github.ref }}
@@ -22,17 +22,13 @@ permissions:
   contents: read
 
 env:
-  # defaults (commit-message tokens can override these in the gate job)
   RUN_SECURITY: ${{ vars.RUN_SECURITY || 'yes' }}
   RUN_OBSERVABILITY: ${{ vars.RUN_OBSERVABILITY || 'yes' }}
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
   SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 jobs:
-  # ------------------------------------------
-  # Gate: decide if we should run at all,
-  #       and which stages to run.
-  # ------------------------------------------
+  # ---------------- Gate: should we run, and which stages? ----------------
   gate:
     runs-on: ubuntu-latest
     outputs:
@@ -50,11 +46,7 @@ jobs:
           echo "has_feature=${HAS_FEATURE}"          >> "$GITHUB_OUTPUT"
           echo "has_cleanup=${HAS_CLEANUP}"          >> "$GITHUB_OUTPUT"
         env:
-          # convenience blobs
-          COMMITS_JSON: ${{ toJson(github.event.commits) }}
-          HEAD_MSG: ${{ github.event.head_commit.message }}
-
-          # issue labels (lowercase JSON string check is fine)
+          # issue labels (string match is fine)
           HAS_FEATURE: ${{ contains(toJson(github.event.issue), '"name":"feature"') }}
           HAS_CLEANUP: ${{ contains(toJson(github.event.issue), '"name":"cleanup"') }}
 
@@ -63,21 +55,28 @@ jobs:
                       || (github.event_name == 'push'   && (contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message, '#orchestrate')))
                       || (github.event_name == 'workflow_dispatch') }}
 
-          # stage toggles (defaults 'yes'; allow commit-msg overrides)
-          RUN_SECURITY_SEL: ${{ (contains(toJson(github.event.commits), '#skip security') || contains(github.event.head_commit.message, '#skip security')) && 'no'
-                                 || (contains(toJson(github.event.commits), '#run security')  || contains(github.event.head_commit.message, '#run security')) && 'yes'
-                                 || 'yes' }}
+          # stage toggles (default yes; allow commit-msg overrides)
+          RUN_SECURITY_SEL: ${{ (
+              contains(toJson(github.event.commits), '#skip security') ||
+              contains(github.event.head_commit.message, '#skip security')
+            ) && 'no' || (
+              contains(toJson(github.event.commits), '#run security')  ||
+              contains(github.event.head_commit.message, '#run security')
+            ) && 'yes' || 'yes' }}
 
-          RUN_OBS_SEL: ${{ (contains(toJson(github.event.commits), '#skip obs')  || contains(toJson(github.event.commits), '#skip observability')
-                                  || contains(github.event.head_commit.message, '#skip obs') || contains(github.event.head_commit.message, '#skip observability')) && 'no'
-                                 || (contains(toJson(github.event.commits), '#run obs')   || contains(toJson(github.event.commits), '#run observability')
-                                  || contains(github.event.head_commit.message, '#run obs') || contains(github.event.head_commit.message, '#run observability')) && 'yes'
-                                 || 'yes' }}
+          RUN_OBS_SEL: ${{ (
+              contains(toJson(github.event.commits), '#skip obs') ||
+              contains(toJson(github.event.commits), '#skip observability') ||
+              contains(github.event.head_commit.message, '#skip obs') ||
+              contains(github.event.head_commit.message, '#skip observability')
+            ) && 'no' || (
+              contains(toJson(github.event.commits), '#run obs') ||
+              contains(toJson(github.event.commits), '#run observability') ||
+              contains(github.event.head_commit.message, '#run obs') ||
+              contains(github.event.head_commit.message, '#run observability')
+            ) && 'yes' || 'yes' }}
 
-
-  # ------------------------------------------
-  # Resolve environment (prod/dev/ci)
-  # ------------------------------------------
+  # ---------------- Resolve environment ----------------
   resolve_context:
     runs-on: ubuntu-latest
     needs: gate
@@ -85,7 +84,7 @@ jobs:
     outputs:
       environment: ${{ steps.resolve.outputs.environment }}
     steps:
-      - name: Resolve environment & toggles
+      - name: Resolve environment
         id: resolve
         shell: bash
         run: |
@@ -101,12 +100,10 @@ jobs:
           fi
           echo "environment=$ENV" >> $GITHUB_OUTPUT
 
-  # ------------------------------------------
-  # Optional per-issue provisioning
-  # ------------------------------------------
+  # ---------------- Optional per-issue provisioning ----------------
   provision_feature:
     name: "Provision Feature Schema"
-    needs: resolve_context
+    needs: [resolve_context, gate]
     if: needs.gate.outputs.has_feature == 'true'
     runs-on: ubuntu-latest
     outputs:
@@ -124,9 +121,7 @@ jobs:
           echo "Creating schema/object: ${FEATURE_SCHEMA}"
           python scripts/python/create_schema.py "${{ github.event.issue.number }}"
 
-  # ------------------------------------------
-  # Security → ELT → Observability (strict order)
-  # ------------------------------------------
+  # ---------------- Security → ELT → Observability (strict) ----------------
   security:
     name: "🔒 Security SAST"
     needs: [resolve_context, provision_feature, gate]
@@ -174,12 +169,10 @@ jobs:
       master_schema: "master_data"
     secrets: inherit # pragma: allowlist secret
 
-  # ------------------------------------------
-  # Manual cleanup via Issue label
-  # ------------------------------------------
+  # ---------------- Manual cleanup via Issue label ----------------
   manual_cleanup:
     name: "Manual Cleanup (Issue)"
-    needs: resolve_context
+    needs: [resolve_context, gate]
     if: needs.gate.outputs.has_cleanup == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -193,9 +186,7 @@ jobs:
         run: |
           python scripts/python/drop_schema.py "${OBJECT_NAME}" "${{ github.event.issue.number }}"
 
-  # ------------------------------------------
-  # Auto cleanup on failure/cancel (only if feature provisioned)
-  # ------------------------------------------
+  # ---------------- Auto cleanup on failure/cancel ----------------
   cleanup_on_failure:
     name: "Auto Cleanup (on failure/cancel)"
     needs: [resolve_context, provision_feature, security, pipelines, observability, gate]
@@ -215,9 +206,7 @@ jobs:
           echo "Attempting rollback of schema/object: ${FEATURE_SCHEMA}"
           python scripts/python/drop_schema.py "${FEATURE_SCHEMA}" "${{ github.run_id }}"
 
-  # ------------------------------------------
-  # Notify (always)
-  # ------------------------------------------
+  # ---------------- Notify (always) ----------------
   notify:
     needs: [gate, resolve_context, security, pipelines, observability]
     runs-on: ubuntu-latest
