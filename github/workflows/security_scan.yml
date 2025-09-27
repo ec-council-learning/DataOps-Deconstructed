@@ -16,33 +16,13 @@ on:
         required: false
         type: string
     secrets:
-      SNOWFLAKE_ACCOUNT:
-        required: false
-      SNOWFLAKE_USER:
-        required: false
-      SNOWFLAKE_PASSWORD:
-        required: false
-      SNOWFLAKE_ROLE:
-        required: false
-      SNOWFLAKE_WAREHOUSE:
-        required: false
       SLACK_WEBHOOK_URL:
         required: false
-  pull_request:
-    branches: [main, develop, 'feature/*']
-    types: [opened, synchronize, reopened, ready_for_review]
-    # Only trigger when relevant files changed
-    paths:
-      - "models/**"
-      - "seeds/**"
-      - "scripts/dbt/**"
-      - ".sqlfluff"
-      - "**/*.sql"
 
 permissions:
   contents: read
-  pull-requests: write          # needed for PR annotations/comments
-  security-events: write        # needed to upload SARIF to Code Scanning
+  pull-requests: write      # for PR annotations/comments
+  security-events: write    # for SARIF upload
   actions: read
 
 concurrency:
@@ -54,11 +34,12 @@ jobs:
     name: SQLFluff SAST (changed files only)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    if: github.event.pull_request.draft != true || github.event_name != 'pull_request'  # run on workflow_call or non-draft PRs
 
     env:
-      IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
       SQLFLUFF_DIALECT: snowflake
       SQLFLUFF_CONFIG: .sqlfluff
+      IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
 
     steps:
       # ----- Runner & repo prep -----
@@ -84,7 +65,7 @@ jobs:
             **/requirements.txt
             ${{ inputs.requirements_path }}
 
-      - name: Install Python dependencies from requirements
+      - name: Install Python dependencies
         if: inputs.requirements_path != ''
         run: |
           python -m pip install --upgrade pip
@@ -102,17 +83,16 @@ jobs:
             scripts/dbt/**
             .sqlfluff
 
-      - name: Validate commit scope (disallow risky path edits in SAST PRs)
+      - name: Validate commit scope (block risky automation edits)
         if: steps.changed.outputs.all_changed_files_count != '0'
         shell: bash
         run: |
           set -euo pipefail
-          # Tune this regex to your repo's policy for "high-risk automation files"
           disallowed='(^\.github/workflows/.*$)|(^scripts/.*\.(sh|py)$)'
           blocked=0
           while IFS= read -r f; do
             if [[ "$f" =~ $disallowed ]]; then
-              echo "::error file=$f::Changes to high-risk automation files are not allowed in this SAST-scoped PR without security approval."
+              echo "::error file=$f::Changes to automation files are not allowed in this SAST-scoped PR without security approval."
               blocked=1
             fi
           done < <(printf "%s\n" ${{ steps.changed.outputs.all_changed_files }})
@@ -131,36 +111,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Filter to *.sql and expected DBT dirs
           mapfile -t FILES < <(printf "%s\n" ${{ steps.changed.outputs.all_changed_files }} | grep -E '\.sql$|^models/|^seeds/|^scripts/dbt/' || true)
           if [ ${#FILES[@]} -eq 0 ]; then
             echo "No SQL/DBT files to lint."
             echo "status=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           echo "Linting changed files:"; printf ' - %s\n' "${FILES[@]}"
-          # Inline PR annotations
+
+          # Inline PR annotations (GitHub format)
           set +e
           sqlfluff lint "${FILES[@]}" --dialect "${SQLFLUFF_DIALECT}" --config "${SQLFLUFF_CONFIG}" --format github-annotation
           lint_status=$?
           set -e
-          # JSON for artifact / optional SARIF conversion
+
+          # JSON report for artifacts / SARIF conversion
           sqlfluff lint "${FILES[@]}" --dialect "${SQLFLUFF_DIALECT}" --config "${SQLFLUFF_CONFIG}" --format json > sqlfluff-report.json || true
           echo "status=${lint_status}" >> "$GITHUB_OUTPUT"
 
-      # ----- SARIF (optional but recommended) -----
+      # ----- SARIF for Code Scanning -----
       - name: Convert JSON to SARIF
         if: steps.lint.outputs.status != '0'
         shell: bash
         run: |
           python - <<'PY'
-          import json, sys
+          import json
           rep=json.load(open('sqlfluff-report.json'))
           sarif={"version":"2.1.0","$schema":"https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"sqlfluff","informationUri":"https://docs.sqlfluff.com"}},"results":[]}]}
           for file in rep:
               for v in file.get("violations",[]):
-                  level = "note"
-                  sev = v.get("severity","").upper()
+                  level="note"
+                  sev=(v.get("severity","") or "").upper()
                   if sev in ("E","HIGH","H"): level="error"
                   elif sev in ("W","MEDIUM","M","L"): level="warning"
                   sarif["runs"][0]["results"].append({
@@ -196,19 +178,17 @@ jobs:
           retention-days: 7
 
       - name: Slack — failure summary (skips on forks)
-        if: failure() && env.IS_FORK != 'true'
+        if: failure() && env.IS_FORK != 'true' && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
-            {
-              "text": "🚨 SQL SAST failed on `${{ github.ref_name }}` for PR #${{ github.event.number }}. See PR annotations and SARIF for details."
-            }
+            { "text": "🚨 SQL SAST failed on `${{ github.ref_name }}` for PR #${{ github.event.number }}. See PR annotations and SARIF for details." }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
       - name: Slack — success (optional, skips on forks)
-        if: success() && env.IS_FORK != 'true'
+        if: success() && env.IS_FORK != 'true' && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
