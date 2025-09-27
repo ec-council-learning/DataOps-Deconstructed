@@ -1,0 +1,68 @@
+{
+    "path_count": 279,
+    "parsed_path_count": 279,
+    "static_analysis_path_count": 4,
+    "static_analysis_parsed_path_count": 4,
+    "is_partial_parse_enabled": false,
+    "is_static_analysis_enabled": true,
+    "read_files_elapsed": 0.03237651699998878,
+    "load_macros_elapsed": 1.1285980260000201,
+    "parse_project_elapsed": 0.7693644460000257,
+    "patch_sources_elapsed": 0.02105296300001669,
+    "process_manifest_elapsed": 0.047133905999999115,
+    "load_all_elapsed": 2.09130389500001,
+    "projects": [
+        {
+            "project_name": "logistics_demo",
+            "elapsed": 0.750341321999997,
+            "parsers": [
+                {
+                    "parser": "model",
+                    "elapsed": 0.2220341550000171,
+                    "parsed_path_count": 4
+                },
+                {
+                    "parser": "seed",
+                    "elapsed": 0.15041116900002294,
+                    "parsed_path_count": 4
+                },
+                {
+                    "parser": "test",
+                    "elapsed": 0.3731002880000176,
+                    "parsed_path_count": 1
+                }
+            ],
+            "parsed_path_count": 9
+        },
+        {
+            "project_name": "dbt_snowflake",
+            "elapsed": 0.005285279000020182,
+            "parsers": [],
+            "parsed_path_count": 0
+        },
+        {
+            "project_name": "dbt",
+            "elapsed": 0.004368096999996851,
+            "parsers": [
+                {
+                    "parser": "doc",
+                    "elapsed": 0.0002074150000055397,
+                    "parsed_path_count": 1
+                }
+            ],
+            "parsed_path_count": 1
+        },
+        {
+            "project_name": "dbt_expectations",
+            "elapsed": 0.004104726999997865,
+            "parsers": [],
+            "parsed_path_count": 0
+        },
+        {
+            "project_name": "dbt_date",
+            "elapsed": 0.005088002999997343,
+            "parsers": [],
+            "parsed_path_count": 0
+        }
+    ]
+}

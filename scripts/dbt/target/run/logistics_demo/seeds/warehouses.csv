@@ -1,0 +1,12 @@
+
+    
+    
+    truncate table "LOGISTICS_DEMO"."NONE"."WAREHOUSES";
+    -- dbt seed --
+    
+            insert into LOGISTICS_DEMO.None.warehouses (warehouse_id, warehouse_name, location, capacity_units, manager_name) values
+            (%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s),(%s,%s,%s,%s,%s)
+        
+
+;
+  
