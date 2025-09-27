@@ -44,38 +44,35 @@ jobs:
     steps:
       - id: o
         run: |
-          echo "proceed=${PROCEED}" >> "$GITHUB_OUTPUT"
-          echo "run_security=${RUN_SECURITY_SEL}" >> "$GITHUB_OUTPUT"
-          echo "run_observability=${RUN_OBS_SEL}" >> "$GITHUB_OUTPUT"
-          echo "has_feature=${HAS_FEATURE}" >> "$GITHUB_OUTPUT"
-          echo "has_cleanup=${HAS_CLEANUP}" >> "$GITHUB_OUTPUT"
+          echo "proceed=${PROCEED}"                 >> "$GITHUB_OUTPUT"
+          echo "run_security=${RUN_SECURITY_SEL}"    >> "$GITHUB_OUTPUT"
+          echo "run_observability=${RUN_OBS_SEL}"    >> "$GITHUB_OUTPUT"
+          echo "has_feature=${HAS_FEATURE}"          >> "$GITHUB_OUTPUT"
+          echo "has_cleanup=${HAS_CLEANUP}"          >> "$GITHUB_OUTPUT"
         env:
-          # Aggregate commit messages (covers squash/merge and multi-commit pushes)
+          # convenience blobs
           COMMITS_JSON: ${{ toJson(github.event.commits) }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
-          IS_PUSH: ${{ github.event_name == 'push' }}
-          IS_ISSUE: ${{ github.event_name == 'issues' }}
-          # Token detection helpers (true/false strings)
-          HAS_ORCH: ${{ contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message, '#orchestrate') }}
-          RUN_SEC: ${{ contains(toJson(github.event.commits), '#run security')      || contains(github.event.head_commit.message, '#run security') }}
-          SKIP_SEC: ${{ contains(toJson(github.event.commits), '#skip security')     || contains(github.event.head_commit.message, '#skip security') }}
-          RUN_OBS: ${{ contains(toJson(github.event.commits), '#run obs')           || contains(github.event.head_commit.message, '#run obs') || contains(toJson(github.event.commits), '#run observability') || contains(github.event.head_commit.message, '#run observability') }}
-          SKIP_OBS: ${{ contains(toJson(github.event.commits), '#skip obs')          || contains(github.event.head_commit.message, '#skip obs') || contains(toJson(github.event.commits), '#skip observability') || contains(github.event.head_commit.message, '#skip observability') }}
-          # Issue labels (lowercase embedded in JSON)
-          ISSUE_JSON: ${{ toJson(github.event.issue) }}
+
+          # issue labels (lowercase JSON string check is fine)
           HAS_FEATURE: ${{ contains(toJson(github.event.issue), '"name":"feature"') }}
           HAS_CLEANUP: ${{ contains(toJson(github.event.issue), '"name":"cleanup"') }}
-          # Decide whether to proceed at all
+
+          # proceed on issues with feature/cleanup, on push with #orchestrate, or workflow_dispatch
           PROCEED: ${{ (github.event_name == 'issues' && (contains(toJson(github.event.issue), '"name":"feature"') || contains(toJson(github.event.issue), '"name":"cleanup"')))
                       || (github.event_name == 'push'   && (contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message, '#orchestrate')))
                       || (github.event_name == 'workflow_dispatch') }}
-          # Stage toggles (default "yes", allow overrides by tokens)
+
+          # stage toggles (defaults 'yes'; allow commit-msg overrides)
           RUN_SECURITY_SEL: ${{ (contains(toJson(github.event.commits), '#skip security') || contains(github.event.head_commit.message, '#skip security')) && 'no'
-                                     || (contains(toJson(github.event.commits), '#run security')  || contains(github.event.head_commit.message, '#run security')) && 'yes'
-                                     || 'yes' }}
-          RUN_OBS_SEL: ${{ (contains(toJson(github.event.commits), '#skip obs') || contains(github.event.commits | toJson, '#skip observability') || contains(github.event.head_commit.message, '#skip obs') || contains(github.event.head_commit.message, '#skip observability')) && 'no'
-                                     || (contains(toJson(github.event.commits), '#run obs')  || contains(github.event.commits | toJson, '#run observability') || contains(github.event.head_commit.message, '#run obs') || contains(github.event.head_commit.message, '#run observability')) && 'yes'
-                                     || 'yes' }}
+                                 || (contains(toJson(github.event.commits), '#run security')  || contains(github.event.head_commit.message, '#run security')) && 'yes'
+                                 || 'yes' }}
+
+          RUN_OBS_SEL: ${{ (contains(toJson(github.event.commits), '#skip obs')  || contains(toJson(github.event.commits), '#skip observability')
+                                  || contains(github.event.head_commit.message, '#skip obs') || contains(github.event.head_commit.message, '#skip observability')) && 'no'
+                                 || (contains(toJson(github.event.commits), '#run obs')   || contains(toJson(github.event.commits), '#run observability')
+                                  || contains(github.event.head_commit.message, '#run obs') || contains(github.event.head_commit.message, '#run observability')) && 'yes'
+                                 || 'yes' }}
 
 
   # ------------------------------------------
