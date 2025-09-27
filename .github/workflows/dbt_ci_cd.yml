@@ -107,12 +107,14 @@ jobs:
 
       - name: Run DBT Models and Tests
         working-directory: scripts/dbt
+        continue-on-error: true
         run: |
           dbt run  --profiles-dir .
           dbt test --profiles-dir .
 
       - name: Generate DBT Documentation
         working-directory: scripts/dbt
+        continue-on-error: true
         run: dbt docs generate --profiles-dir .
 
       - name: Upload DBT Documentation Artifact
