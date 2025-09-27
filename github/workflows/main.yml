@@ -1,16 +1,18 @@
 name: Platform Orchestrator (Security → ELT → Observability)
-run-name: "Orchestrator: ${{ github.ref_name }} - ${{ github.event_name }}"
+run-name: "Orchestrator: ${{ github.ref_name }} • ${{
+  startsWith(github.event_name, 'pull_request') && 'pull_request' || github.event_name }}"
 
 on:
   push:
-    tags:
-      - 'pipeline validation'
     branches:
       - main
       - develop
       - 'feature/*'
+    tags:
+      - 'pipeline validation'
   issues:
-    types: [labeled, closed, opened, locked, reopened, unlocked]
+    types: [labeled, reopened, opened, unlocked]
+  workflow_dispatch: {}   # still allows manual dispatch if needed
 
 concurrency:
   group: orchestrator-${{ github.ref }}
@@ -20,18 +22,76 @@ permissions:
   contents: read
 
 env:
+  # defaults (commit-message tokens can override these in the gate job)
   RUN_SECURITY: ${{ vars.RUN_SECURITY || 'yes' }}
   RUN_OBSERVABILITY: ${{ vars.RUN_OBSERVABILITY || 'yes' }}
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
   SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 jobs:
-  resolve-context:
+  # ------------------------------------------
+  # Gate: decide if we should run at all,
+  #       and which stages to run.
+  # ------------------------------------------
+  gate:
     runs-on: ubuntu-latest
     outputs:
+      proceed: ${{ steps.decide.outputs.proceed }}
+      run_security: ${{ steps.decide.outputs.run_security }}
+      run_observability: ${{ steps.decide.outputs.run_observability }}
+      has_feature: ${{ steps.decide.outputs.has_feature }}
+      has_cleanup: ${{ steps.decide.outputs.has_cleanup }}
+    steps:
+      - id: decide
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Defaults from repo/env settings
+          RUN_SEC="${RUN_SECURITY:-yes}"
+          RUN_OBS="${RUN_OBSERVABILITY:-yes}"
+          PROCEED=false
+          HAS_FEATURE=false
+          HAS_CLEANUP=false
+
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            # Issue-labeled runs
+            LABELS=$(jq -r '.issue.labels[].name // empty' < "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')
+            if echo "$LABELS" | grep -Eq '(^|[[:space:]])feature($|[[:space:]])'; then
+              HAS_FEATURE=true; PROCEED=true
+            fi
+            if echo "$LABELS" | grep -Eq '(^|[[:space:]])cleanup($|[[:space:]])'; then
+              HAS_CLEANUP=true; PROCEED=true
+            fi
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            # Manual triggers via commit messages (scan all commits in the push)
+            MSGS=$(jq -r '.commits[].message // empty' < "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')
+            if echo "$MSGS" | grep -q '\[#orchestrate\]\|\[#run ci\]\|\[#run elt\]'; then
+              PROCEED=true
+            fi
+            if echo "$MSGS" | grep -q '\[#run security\]'; then RUN_SEC=yes; PROCEED=true; fi
+            if echo "$MSGS" | grep -q '\[#skip security\]'; then RUN_SEC=no;  PROCEED=true; fi
+            if echo "$MSGS" | grep -q '\[#run obs\]\|\[#run observability\]'; then RUN_OBS=yes; PROCEED=true; fi
+            if echo "$MSGS" | grep -q '\[#skip obs\]\|\[#skip observability\]'; then RUN_OBS=no;  PROCEED=true; fi
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            PROCEED=true
+          fi
+
+          echo "proceed=$PROCEED"                 >> "$GITHUB_OUTPUT"
+          echo "run_security=$RUN_SEC"            >> "$GITHUB_OUTPUT"
+          echo "run_observability=$RUN_OBS"       >> "$GITHUB_OUTPUT"
+          echo "has_feature=$HAS_FEATURE"         >> "$GITHUB_OUTPUT"
+          echo "has_cleanup=$HAS_CLEANUP"         >> "$GITHUB_OUTPUT"
+
+  # ------------------------------------------
+  # Resolve environment (prod/dev/ci)
+  # ------------------------------------------
+  resolve_context:
+    runs-on: ubuntu-latest
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    outputs:
       environment: ${{ steps.resolve.outputs.environment }}
-      run_security: ${{ steps.resolve.outputs.run_security }}
-      run_observability: ${{ steps.resolve.outputs.run_observability }}
     steps:
       - name: Resolve environment & toggles
         id: resolve
@@ -47,69 +107,136 @@ jobs:
           else
             ENV=ci
           fi
-
-          RUN_SEC="${RUN_SECURITY}"
-          RUN_OBS="${RUN_OBSERVABILITY}"
-
-          if [[ "${{ github.event_name }}" == "issues" ]]; then
-            LABELS="$(jq -r '.issue.labels[].name' < "$GITHUB_EVENT_PATH" || true)"
-            if echo "$LABELS" | grep -qi 'skip-security'; then RUN_SEC=no; fi
-            if echo "$LABELS" | grep -qi 'skip-observability'; then RUN_OBS=no; fi
-          fi
-
           echo "environment=$ENV" >> $GITHUB_OUTPUT
-          echo "run_security=$RUN_SEC" >> $GITHUB_OUTPUT
-          echo "run_observability=$RUN_OBS" >> $GITHUB_OUTPUT
 
+  # ------------------------------------------
+  # Optional per-issue provisioning
+  # ------------------------------------------
+  provision_feature:
+    name: "Provision Feature Schema"
+    needs: resolve_context
+    if: needs.gate.outputs.has_feature == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      feature_schema: ${{ steps.get-name.outputs.feature_schema }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: get-name
+        run: |
+          FEATURE_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" \
+            | grep -i 'Schema/Object Name' | cut -d':' -f2 | xargs | tr '-' '_' )
+          echo "feature_schema=$FEATURE_NAME" >> "$GITHUB_OUTPUT"
+          echo "FEATURE_SCHEMA=$FEATURE_NAME" >> "$GITHUB_ENV"
+      - name: Create schema/object
+        run: |
+          echo "Creating schema/object: ${FEATURE_SCHEMA}"
+          python scripts/python/create_schema.py "${{ github.event.issue.number }}"
+
+  # ------------------------------------------
+  # Security → ELT → Observability (strict order)
+  # ------------------------------------------
   security:
-    name: "Security SAST"
-    needs: resolve-context
-    if: needs.resolve-context.outputs.run_security == 'yes'
+    name: "🔒 Security SAST"
+    needs: [resolve_context, provision_feature, gate]
+    if: needs.gate.outputs.run_security == 'yes'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+      security-events: write
     uses: ./.github/workflows/security.yml
     with:
-      environment: ${{ needs.resolve-context.outputs.environment }}
+      environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/sec.req.txt"
     secrets: inherit # pragma: allowlist secret
 
   pipelines:
-    name: "Medallion ELT"
-    needs: [security, resolve-context]
+    name: "🛠️ Medallion ELT"
+    needs: [security, resolve_context, provision_feature, gate]
     if: |
-      needs.resolve-context.result == 'success' &&
+      needs.gate.outputs.proceed == 'true' &&
       (needs.security.result == 'success' || needs.security.result == 'skipped')
     uses: ./.github/workflows/data_pipeline.yml
     with:
-      environment: ${{ needs.resolve-context.outputs.environment }}
+      environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/elt.req.txt"
     secrets: inherit # pragma: allowlist secret
 
   observability:
-    name: "Observability Metrics"
-    needs: [pipelines, resolve-context]
+    name: "📊 Observability Metrics"
+    needs: [pipelines, resolve_context, provision_feature, gate]
     if: |
-      needs.resolve-context.outputs.run_observability == 'yes' &&
+      needs.gate.outputs.run_observability == 'yes' &&
       needs.pipelines.result == 'success'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/observability_metrics.yml
     with:
-      environment: ${{ needs.resolve-context.outputs.environment }}
+      environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/obs.req.txt"
       master_schema: "master_data"
     secrets: inherit # pragma: allowlist secret
 
+  # ------------------------------------------
+  # Manual cleanup via Issue label
+  # ------------------------------------------
+  manual_cleanup:
+    name: "Manual Cleanup (Issue)"
+    needs: resolve_context
+    if: needs.gate.outputs.has_cleanup == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse object name to delete
+        run: |
+          OBJECT_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" \
+            | grep -i 'Schema/Object Name to Delete' | cut -d':' -f2 | xargs | tr '-' '_' )
+          echo "OBJECT_NAME=$OBJECT_NAME" >> "$GITHUB_ENV"
+      - name: Drop schema/object
+        run: |
+          python scripts/python/drop_schema.py "${OBJECT_NAME}" "${{ github.event.issue.number }}"
+
+  # ------------------------------------------
+  # Auto cleanup on failure/cancel (only if feature provisioned)
+  # ------------------------------------------
+  cleanup_on_failure:
+    name: "Auto Cleanup (on failure/cancel)"
+    needs: [resolve_context, provision_feature, security, pipelines, observability, gate]
+    if: >
+      always() &&
+      needs.gate.outputs.has_feature == 'true' &&
+      (needs.security.result == 'failure' ||
+       needs.pipelines.result == 'failure' ||
+       needs.observability.result == 'failure' || cancelled())
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Drop provisioned schema/object
+        env:
+          FEATURE_SCHEMA: ${{ needs.provision_feature.outputs.feature_schema }}
+        run: |
+          echo "Attempting rollback of schema/object: ${FEATURE_SCHEMA}"
+          python scripts/python/drop_schema.py "${FEATURE_SCHEMA}" "${{ github.run_id }}"
+
+  # ------------------------------------------
+  # Notify (always)
+  # ------------------------------------------
   notify:
-    needs: [resolve-context, security, pipelines, observability]
+    needs: [gate, resolve_context, security, pipelines, observability]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Compose summary
         id: sum
         run: |
-          SEC=${{ needs.resolve-context.outputs.run_security == 'yes' && needs.security.result || 'skipped' }}
-          PIPE=${{ needs.pipelines.result }}
-          OBS=${{ needs.resolve-context.outputs.run_observability == 'yes' && needs.observability.result || 'skipped' }}
+          SEC=${{ needs.gate.outputs.run_security == 'yes' && needs.security.result || 'skipped' }}
+          PIPE=${{ needs.pipelines.result || 'skipped' }}
+          OBS=${{ needs.gate.outputs.run_observability == 'yes' && needs.observability.result || 'skipped' }}
 
           OVERALL=success
           [[ "$SEC" == "failure" || "$PIPE" == "failure" || "$OBS" == "failure" ]] && OVERALL=failure
@@ -120,7 +247,7 @@ jobs:
           echo "observability=$OBS" >> $GITHUB_OUTPUT
           echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
           echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "env=${{ needs.resolve-context.outputs.environment }}" >> $GITHUB_OUTPUT
+          echo "env=${{ needs.resolve_context.outputs.environment || 'n/a' }}" >> $GITHUB_OUTPUT
           echo "event=${{ github.event_name }}" >> $GITHUB_OUTPUT
 
       - name: Slack — Orchestration Summary
@@ -139,10 +266,7 @@ jobs:
                 ]},
                 { "type":"divider" },
                 { "type":"section", "text": { "type":"mrkdwn",
-                  "text":"*Stages*\n• Security scan: *${{ steps.sum.outputs.security }}*\n• Data pipelines (ELT): *${{ steps.sum.outputs.pipelines }}*\n• Observability metrics: *${{ steps.sum.outputs.observability }}*" } },
-                { "type":"context", "elements": [
-                  { "type":"mrkdwn", "text":"Labels `skip-security` / `skip-observability` can alter stage execution for issue-triggered runs." }
-                ]}
+                  "text":"*Stages*\n• Security scan: *${{ steps.sum.outputs.security }}*\n• Data pipelines (ELT): *${{ steps.sum.outputs.pipelines }}*\n• Observability metrics: *${{ steps.sum.outputs.observability }}*" } }
               ]
             }
         env:
