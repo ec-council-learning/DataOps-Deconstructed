@@ -2,13 +2,13 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import pandas as pd
 import snowflake.connector
 
 # ----------------------------
-# Environment & schema context
+# Environment & layer schemas
 # ----------------------------
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
 SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER")
@@ -17,29 +17,37 @@ SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE")
 SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
 GITHUB_ISSUE_ID = os.getenv("GITHUB_ISSUE_ID", "no_issue")
 
-schema_name = f"feature_{GITHUB_ISSUE_ID}" if GITHUB_ISSUE_ID != "no_issue" else "none"
+
+def layer_schema(layer: str) -> str:
+    return (
+        f"{layer}_issue_{GITHUB_ISSUE_ID}" if GITHUB_ISSUE_ID != "no_issue" else layer
+    )
 
 
-# -------------------------------------------
-# Resolve repo paths RELATIVE to this script
-#   <repo>/scripts/python/create_dashboard.py
-#   <repo>/scripts/ddls/dashboard_metrics.sql
-#   <repo>/scripts/dbt/logs/dbt.log   (preferred)
-# -------------------------------------------
+GOLD_SCHEMA = layer_schema("gold")
+
+# default schema on connection (doesn't affect explicit, fully-qualified queries)
+SCHEMA_FOR_CONNECTION = os.getenv("DBT_TARGET_SCHEMA") or "default"
+
+
+# ----------------------------
+# Paths (relative to this file)
+# ----------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent  # .../scripts/python
 SCRIPTS_DIR = SCRIPT_DIR.parent  # .../scripts
 DDLS_DIR = SCRIPTS_DIR / "ddls"
 METRICS_SQL = DDLS_DIR / "dashboard_metrics.sql"
 
-# Prefer dbt logs inside project dir; fallback to ./logs/dbt.log if needed
 DBT_LOG_CANDIDATES = [
-    SCRIPTS_DIR / "dbt" / "logs" / "dbt.log",  # <repo>/scripts/dbt/logs/dbt.log
-    Path.cwd() / "logs" / "dbt.log",  # <cwd>/logs/dbt.log
+    SCRIPTS_DIR / "dbt" / "logs" / "dbt.log",
+    Path.cwd() / "logs" / "dbt.log",
 ]
 
 
+# ----------------------------
+# Snowflake helpers
+# ----------------------------
 def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
-    """Create a connection to Snowflake using environment credentials."""
     return snowflake.connector.connect(
         account=SNOWFLAKE_ACCOUNT,
         user=SNOWFLAKE_USER,
@@ -47,42 +55,85 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
         role=SNOWFLAKE_ROLE,
         warehouse=SNOWFLAKE_WAREHOUSE,
         database="LOGISTICS_DEMO",
-        schema=schema_name,
+        schema=SCHEMA_FOR_CONNECTION,
     )
 
 
-def execute_sql_query_from_file(
+def _df_from_cursor(cur: snowflake.connector.cursor.SnowflakeCursor) -> pd.DataFrame:
+    rows = cur.fetchall()
+    cols: List[str] = [c[0] for c in cur.description] if cur.description else []
+    return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+
+
+# ----------------------------
+# Multi-statement SQL executor
+# ----------------------------
+def execute_multistatement_sql_from_file(
     conn: snowflake.connector.SnowflakeConnection,
     file_path: Path,
-    schema_name: str,
+    schema_name_for_metrics: str,
 ) -> pd.DataFrame:
-    """Read a SQL script from a file, substitute the schema placeholder, and execute it."""
-    try:
-        with file_path.open("r", encoding="utf-8") as f:
-            sql_query = f.read().replace("{{SCHEMA_NAME}}", schema_name)
-        return pd.read_sql(sql_query, conn)  # Snowflake connector is DB-API compatible
-    except Exception as exc:
-        print(f"Error executing SQL query from {file_path}: {exc}")
+    """
+    Execute a multi-statement SQL script and return a DataFrame for the FINAL statement.
+
+    The SQL file should contain statements separated by ';'.
+    Use {{SCHEMA_NAME}} in the file which will be replaced by schema_name_for_metrics.
+    """
+    if not file_path.is_file():
+        print(f"Error: SQL file not found at {file_path}")
         sys.exit(1)
 
+    try:
+        with file_path.open("r", encoding="utf-8") as f:
+            sql_text = f.read().replace("{{SCHEMA_NAME}}", schema_name_for_metrics)
 
+        # naïve split on semicolons into individual statements
+        # (safe as long as you don't embed literal semicolons in string literals)
+        statements = [s.strip() for s in sql_text.split(";") if s.strip()]
+
+        last_df = pd.DataFrame()
+        with conn.cursor() as cur:
+            for i, stmt in enumerate(statements, start=1):
+                cur.execute(stmt)
+                # Only the final statement is expected to be a SELECT that returns rows
+                if i == len(statements) and cur.description:
+                    last_df = _df_from_cursor(cur)
+
+        return last_df
+
+    except Exception as exc:
+        print(f"Error executing SQL from {file_path}: {exc}")
+        # Return an empty frame so the pipeline continues with a dashboard shell
+        return pd.DataFrame(
+            columns=[
+                "REPORT_DATE",
+                "WAREHOUSE_NAME",
+                "PRODUCT_NAME",
+                "TOTAL_ORDERS",
+                "TOTAL_UNITS_SHIPPED",
+                "TOTAL_UNITS_REPLENISHED",
+                "STOCK_TURNOVER_RATIO",
+            ]
+        )
+
+
+# ----------------------------
+# dbt metrics (best-effort)
+# ----------------------------
 def extract_dbt_metrics() -> Tuple[str, int, int]:
-    """Parse a dbt log file to extract runtime and test counts."""
-    run_duration: str = "N/A"
-    tests_passed: int = -1
-    tests_failed: int = -1
+    run_duration = "N/A"
+    tests_passed = -1
+    tests_failed = -1
 
     log_path = next((p for p in DBT_LOG_CANDIDATES if p.is_file()), None)
     if not log_path:
-        # No logs available; return defaults without failing the whole step
-        return "N/A", -1, -1
+        return run_duration, tests_passed, tests_failed
 
     try:
         with log_path.open("r", encoding="utf-8") as log_file:
             lines = log_file.readlines()
             for line in reversed(lines):
                 if "completed successfully" in line and "in" in line:
-                    # naive parse (keeps your original approach)
                     run_duration = line.strip().split()[-2] + " seconds"
                     break
             tests_passed = sum("PASS" in line for line in lines)
@@ -93,45 +144,45 @@ def extract_dbt_metrics() -> Tuple[str, int, int]:
     return run_duration, tests_passed, tests_failed
 
 
+# ----------------------------
+# Markdown rendering
+# ----------------------------
 def generate_markdown(
     df_metrics: pd.DataFrame,
     dbt_metrics: Tuple[str, int, int],
     gha_status: str,
-    schema_name: str,
+    schema_label: str,
 ) -> str:
-    """Compose a Markdown dashboard from metrics and status."""
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    md_content = (
-        f"# 📊 Inventory Management Dashboard - Issue {schema_name}\n\n"
+    md = (
+        f"# 📊 Inventory Management Dashboard — Schema `{schema_label}`\n\n"
         f"**Last Updated:** {now}\n\n"
         "## 🛠️ DBT Metrics\n\n"
         f"- **Last Run Duration:** {dbt_metrics[0]}\n"
         f"- **Tests Passed:** {dbt_metrics[1]}\n"
         f"- **Tests Failed:** {dbt_metrics[2]}\n\n"
-        "## ❄️ Snowflake Metrics\n\n"
-    )
-    md_content += df_metrics.to_markdown(index=False)
-    md_content += (
-        "\n\n"
+        "## ❄️ Snowflake Metrics (Top 10)\n\n"
+        f"{df_metrics.to_markdown(index=False)}\n\n"
         "## 🚀 GitHub Actions Metrics\n\n"
         f"- **Last Deployment Status:** {gha_status}\n"
-        f"- **Last Deployment Time:** {now}\n\n"
+        f"- **Last Deployment Time:** {now}\n"
     )
-    return md_content
+    return md
 
 
+# ----------------------------
+# Main
+# ----------------------------
 def main() -> None:
-    """Entry point for generating the dashboard from Snowflake and dbt logs."""
-    print(f"Connecting to Snowflake Schema: {schema_name}")
+    print(
+        f"Connecting to Snowflake (connection default schema): {SCHEMA_FOR_CONNECTION}"
+    )
     conn = connect_to_snowflake()
 
-    # Ensure the metrics SQL exists
-    if not METRICS_SQL.is_file():
-        print(f"Error: SQL file not found at {METRICS_SQL}")
-        sys.exit(1)
-
-    print(f"Executing Metrics Query from: {METRICS_SQL}")
-    df_metrics = execute_sql_query_from_file(conn, METRICS_SQL, schema_name)
+    print(
+        f"Executing multi-statement metrics SQL: {METRICS_SQL} (schema: {GOLD_SCHEMA})"
+    )
+    df_metrics = execute_multistatement_sql_from_file(conn, METRICS_SQL, GOLD_SCHEMA)
 
     print("Extracting DBT Metrics...")
     dbt_metrics = extract_dbt_metrics()
@@ -143,15 +194,15 @@ def main() -> None:
         df_metrics=df_metrics,
         dbt_metrics=dbt_metrics,
         gha_status=gha_status,
-        schema_name=schema_name,
+        schema_label=GOLD_SCHEMA,
     )
 
-    dashboard_filename = f"dashboard_{schema_name}.md"
-    with open(dashboard_filename, "w", encoding="utf-8") as f:
+    out_file = f"dashboard_{GOLD_SCHEMA}.md"
+    with open(out_file, "w", encoding="utf-8") as f:
         f.write(dashboard_md)
 
     conn.close()
-    print(f"Dashboard generated successfully as {dashboard_filename}")
+    print(f"Dashboard generated successfully as {out_file}")
 
 
 if __name__ == "__main__":
