@@ -161,7 +161,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    uses: ./.github/workflows/observability_metrics.yml
+    uses: ./.github/workflows/observability.yml
     with:
       environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
