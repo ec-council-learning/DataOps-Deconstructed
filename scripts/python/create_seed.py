@@ -2,27 +2,23 @@ import csv
 import os
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from faker import Faker
 
-# Importing typing for potential type annotations if needed.
-# Removed invalid import of `None` alias as it caused syntax errors.
-
-
 fake = Faker()
 
-# Directory to store generated seed files
-SEED_DIR = "../scripts/dbt/seeds/"
-NUM_ROWS = 9999  # Use a plain integer to avoid lib2to3 parse issues with underscores.
+# Directory to store generated seed files relative to this script
+SEED_DIR = Path(__file__).resolve().parents[1] / "dbt" / "seeds"
+SEED_DIR.mkdir(parents=True, exist_ok=True)
 
-# Ensure the seed directory exists
-os.makedirs(SEED_DIR, exist_ok=True)
+NUM_ROWS = 9999
 
 
 def generate_products() -> None:
     """Generate a products.csv file with synthetic product data."""
     categories = ["Electronics", "Sports", "Home & Kitchen", "Books", "Toys"]
-    with open(os.path.join(SEED_DIR, "products.csv"), mode="w", newline="") as file:
+    with open(SEED_DIR / "products.csv", mode="w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(
             [
@@ -36,7 +32,7 @@ def generate_products() -> None:
         )
         for i in range(NUM_ROWS):
             product_id = f"PRD{i + 1:05d}"
-            # Non‑unique word prevents UniquenessException. Unique identity comes from product_id.
+            # Non-unique word prevents UniquenessException.
             product_name = (
                 f"{fake.word().title()} "
                 f"{random.choice(['Pro', 'Max', 'Lite', 'Standard'])}"
@@ -63,7 +59,7 @@ def generate_products() -> None:
 
 def generate_warehouses() -> None:
     """Generate a warehouses.csv file with warehouse metadata."""
-    with open(os.path.join(SEED_DIR, "warehouses.csv"), mode="w", newline="") as file:
+    with open(SEED_DIR / "warehouses.csv", mode="w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(
             [
@@ -78,7 +74,7 @@ def generate_warehouses() -> None:
             warehouse_id = f"WH{i:03d}"
             warehouse_name = f"{fake.city()} Warehouse"
             location = f"{fake.city()}, {fake.country_code()}"
-            capacity_units = random.randint(5000, 100000)
+            capacity_units = random.randint(5_000, 100_000)
             manager_name = fake.name()
             writer.writerow(
                 [warehouse_id, warehouse_name, location, capacity_units, manager_name]
@@ -88,9 +84,7 @@ def generate_warehouses() -> None:
 def generate_inventory_movements() -> None:
     """Generate an inventory_movements.csv file with stock movement events."""
     movement_types = ["replenishment", "outbound", "adjustment"]
-    with open(
-        os.path.join(SEED_DIR, "inventory_movements.csv"), mode="w", newline=""
-    ) as file:
+    with open(SEED_DIR / "inventory_movements.csv", mode="w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(
             [
@@ -126,9 +120,7 @@ def generate_inventory_movements() -> None:
 def generate_customer_orders() -> None:
     """Generate a customer_orders.csv file with order data."""
     sales_channels = ["online", "retail", "wholesale"]
-    with open(
-        os.path.join(SEED_DIR, "customer_orders.csv"), mode="w", newline=""
-    ) as file:
+    with open(SEED_DIR / "customer_orders.csv", mode="w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(
             [
