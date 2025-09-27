@@ -17,9 +17,7 @@ SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE")
 SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
 GITHUB_ISSUE_ID = os.getenv("GITHUB_ISSUE_ID", "no_issue")
 
-schema_name = (
-    f"feature_{GITHUB_ISSUE_ID}" if GITHUB_ISSUE_ID != "no_issue" else "default"
-)
+schema_name = f"feature_{GITHUB_ISSUE_ID}" if GITHUB_ISSUE_ID != "no_issue" else "none"
 
 
 # -------------------------------------------
