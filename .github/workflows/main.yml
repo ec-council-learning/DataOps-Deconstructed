@@ -1,4 +1,5 @@
 name: Platform Orchestrator (Security → ELT → Observability)
+run-name: "Orchestrator • ${{ github.ref_name }} • ${{ github.event_name }}"
 
 on:
   push:
@@ -61,6 +62,7 @@ jobs:
           echo "run_observability=$RUN_OBS" >> $GITHUB_OUTPUT
 
   security:
+    name: "Security SAST"
     needs: resolve-context
     if: needs.resolve-context.outputs.run_security == 'yes'
     uses: ./.github/workflows/security_scan.yml
@@ -71,6 +73,7 @@ jobs:
     secrets: inherit # pragma: allowlist secret
 
   pipelines:
+    name: "Medallion ELT"
     needs: [resolve-context, security]
     if: |
       (needs.resolve-context.result == 'success') &&
@@ -83,6 +86,7 @@ jobs:
     secrets: inherit # pragma: allowlist secret
 
   observability:
+    name: "Observability Metrics"
     needs: [resolve-context, pipelines]
     if: |
       needs.resolve-context.outputs.run_observability == 'yes' &&
