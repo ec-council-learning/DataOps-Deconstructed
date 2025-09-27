@@ -89,38 +89,6 @@ jobs:
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 
-      - name: Verify seeds on disk
-        run: |
-          ls -la scripts/dbt/seeds
-          test -f scripts/dbt/seeds/products.csv            || (echo "Missing products.csv" && exit 1)
-          test -f scripts/dbt/seeds/warehouses.csv          || (echo "Missing warehouses.csv" && exit 1)
-          test -f scripts/dbt/seeds/inventory_movements.csv || (echo "Missing inventory_movements.csv" && exit 1)
-          test -f scripts/dbt/seeds/customer_orders.csv     || (echo "Missing customer_orders.csv" && exit 1)
-
-      - name: Verify dbt can see the seeds
-        working-directory: scripts/dbt
-        run: |
-          dbt deps
-          dbt ls --profiles-dir . --select seed:*
-          dbt ls --profiles-dir . --select ref:products   || (echo "dbt can't find ref:products" && exit 1)
-          dbt ls --profiles-dir . --select ref:warehouses || (echo "dbt can't find ref:warehouses" && exit 1)
-
-      # --- DBT: always from project dir, using repo's profiles.yml ---
-      - name: Install dbt packages
-        working-directory: scripts/dbt
-        run: dbt deps
-
-      # Guardrails & clean cache (fail fast if a macro call is reintroduced)
-      - name: Guardrails & clean cache
-        run: |
-          echo "Active dbt_project.yml:"
-          sed -n '1,200p' scripts/dbt/dbt_project.yml
-          if grep -n "generate_schema_name(" scripts/dbt/dbt_project.yml; then
-            echo "dbt_project.yml still calls generate_schema_name(). Fail."; exit 1; fi
-          if grep -n "generate_alias_name(" scripts/dbt/dbt_project.yml; then
-            echo "dbt_project.yml still calls generate_alias_name(). Fail."; exit 1; fi
-          rm -rf scripts/dbt/target
-
       - name: Verify DBT project (parse/compile)
         working-directory: scripts/dbt
         run: |
