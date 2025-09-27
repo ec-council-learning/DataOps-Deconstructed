@@ -15,18 +15,26 @@ on:
         description: "Path to Python requirements file"
         required: false
         type: string
+      master_schema:
+        description: "Master-data schema (seeds) within LOGISTICS_DEMO"
+        required: false
+        type: string
+        default: "master_data"
     secrets:
       SNOWFLAKE_ACCOUNT: {required: false}
       SNOWFLAKE_USER: {required: false}
-      SNOWFLAKE_PASSWORD: {required: false} # consider key-pair or OAuth; see notes
+      SNOWFLAKE_PASSWORD: {required: false}
       SNOWFLAKE_ROLE: {required: false}
       SNOWFLAKE_WAREHOUSE: {required: false}
       SLACK_WEBHOOK_URL: {required: false}
+      SNOWFLAKE_PRIVATE_KEY_B64: {required: false}
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: {required: false}
 
 permissions:
   contents: read
-  pages: write    # needed for gh-pages publish
-  id-token: write # recommended for future OIDC auth to Snowflake/Pages
+  pages: write
+  id-token: write
+
 concurrency:
   group: observability-${{ github.ref }}
   cancel-in-progress: false
@@ -45,11 +53,15 @@ jobs:
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
       SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      # Optional key-pair auth (preferred if provided)
+      SNOWFLAKE_PRIVATE_KEY_B64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
 
       # Context (non-sensitive)
       RUN_ID: ${{ github.run_id }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       GIT_SHA: ${{ github.sha }}
+      DBT_PROFILES_DIR: scripts/dbt
       TZ: UTC
 
     steps:
@@ -66,167 +78,48 @@ jobs:
             **/requirements.txt
             ${{ inputs.requirements_path }}
 
-      - name: Install Python dependencies from requirements
+      - name: Install Python dependencies
         if: inputs.requirements_path != ''
         run: |
           python -m pip install --upgrade pip
           pip install -r "${{ inputs.requirements_path }}"
 
-      # Optional dbt build (remove if metrics only read from warehouse)
+      # Optional dbt build (remove if dashboards only read warehouse)
       - name: Run dbt build/tests (layer-agnostic)
         working-directory: scripts/dbt
         env:
-          # Let the caller pass env via workflow_call inputs; default to prod if absent
           DBT_ENVIRONMENT: ${{ inputs.environment || 'prod' }}
         run: |
+          test -f profiles.yml
           dbt deps
-          dbt build --profiles-dir . --target "${DBT_ENVIRONMENT}" --fail-fast
-          dbt test  --profiles-dir . --target "${DBT_ENVIRONMENT}" --store-failures
+          dbt build --target "${DBT_ENVIRONMENT}" --fail-fast
+          dbt test  --target "${DBT_ENVIRONMENT}" --store-failures
 
-      - name: Compute KPIs & DQ signals (no secret prints)
+      - name: Compute KPIs & DQ signals
         id: kpis
-        env:
-          # Scope secrets ONLY to this step to reduce scanner surface
-          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
-          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          # Optional key-pair auth (preferred)
-          SNOWFLAKE_PRIVATE_KEY_B64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}
-          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
         run: |
-          python - <<'PY'
-          import os, json, re, base64, glob
-          import snowflake.connector as sf
-
-          # --- Derive safe schema suffix ---
-          issue = os.getenv("GITHUB_ISSUE_ID","no_issue")
-          safe_issue = re.sub(r'[^A-Za-z0-9_]', '_', issue)
-          gold   = f"gold_issue_{safe_issue}"   if issue != "no_issue" else "gold"
-          silver = f"silver_issue_{safe_issue}" if issue != "no_issue" else "silver"
-
-          # --- Build connection args (prefer key-pair auth) ---
-          conn_args = {
-            "account":   os.getenv("SNOWFLAKE_ACCOUNT"),
-            "user":      os.getenv("SNOWFLAKE_USER"),
-            "role":      os.getenv("SNOWFLAKE_ROLE"),
-            "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
-          }
-
-          pk_b64 = os.getenv("SNOWFLAKE_PRIVATE_KEY_B64")
-          if pk_b64:
-            # Load encrypted or plaintext PK from base64; avoid printing anything sensitive
-            from cryptography.hazmat.primitives import serialization
-            from cryptography.hazmat.backends import default_backend
-            pk_bytes = base64.b64decode(pk_b64.encode())
-            passphrase = os.getenv("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
-            private_key = serialization.load_pem_private_key(
-                pk_bytes,
-                password=(passphrase.encode() if passphrase else None),
-                backend=default_backend(),
-            )
-            conn_args["private_key"] = private_key
-          else:
-            # Fallback: use password without a literal 'password=' token in source
-            # pragma: allowlist secret
-            conn_args["pass" + "word"] = os.getenv("SNOWFLAKE_PASSWORD")
-
-          conn = sf.connect(**conn_args)
-          cs = conn.cursor()
-
-          # --- KPIs (example) ---
-          kpi_sql = f"""
-          with d as (
-            select report_date,
-                   sum(total_orders) as total_orders,
-                   sum(total_units_shipped) as units_shipped,
-                   avg(stock_turnover_ratio) as stock_turnover_ratio
-            from {gold}.daily_inventory_kpis
-            where report_date >= dateadd('day', -7, current_date())
-            group by 1
-          )
-          select max(report_date), sum(total_orders), sum(units_shipped), avg(stock_turnover_ratio)
-          from d;
-          """
-          cs.execute(kpi_sql)
-          last_date, wk_orders, wk_units, avg_turn = cs.fetchone()
-
-          # Trend vs last week day
-          cs.execute(f"""
-            with b as (
-              select report_date, sum(total_orders) total_orders
-              from {gold}.daily_inventory_kpis group by 1
-            )
-            select
-              (select total_orders from b where report_date = dateadd('day', -1, current_date())) as d1,
-              (select total_orders from b where report_date = dateadd('day', -8, current_date())) as d8;
-          """)
-          d1, d8 = cs.fetchone()
-          order_trend = round(100*(d1 - d8)/d8, 1) if (d1 and d8) else None
-
-          # Freshness (silver)
-          try:
-            cs.execute(f"select datediff('hour', max(report_date), current_timestamp()) from {silver}.daily_inventory_snapshot")
-            freshness_hours = cs.fetchone()[0]
-          except Exception:
-            freshness_hours = None
-
-          # DQ from dbt run_results if available
-          tests_total = tests_passed = 0
-          rr = glob.glob('scripts/dbt/target/run_results.json')
-          if rr:
-            data = json.load(open(rr[0]))
-            for r in data.get("results", []):
-              if r.get("unique_id","").startswith("test."):
-                tests_total += 1
-                tests_passed += int(r.get("status") == "pass")
-          pass_rate = round(100 * (tests_passed / max(1, tests_total)), 1)
-
-          # Anomaly (simple spike)
-          cs.execute(f"""
-            with base as (
-              select report_date, sum(total_orders) total_orders
-              from {gold}.daily_inventory_kpis
-              where report_date >= dateadd('day', -30, current_date())
-              group by 1
-            )
-            select
-              (select total_orders from base where report_date = dateadd('day', -1, current_date())) as yday,
-              (select avg(total_orders) from base where report_date < dateadd('day', -1, current_date())) as avg30
-            ;
-          """)
-          yday, avg30 = cs.fetchone()
-          anomaly_flag = bool(yday and avg30 and yday > 2*(avg30 or 0))
-
-          out = {
-            "last_date": str(last_date) if last_date else None,
-            "wk_orders": int(wk_orders or 0),
-            "wk_units": int(wk_units or 0),
-            "avg_turnover": float(round(avg_turn or 0, 3)),
-            "order_trend_pct": order_trend,
-            "tests_total": tests_total,
-            "tests_passed": tests_passed,
-            "tests_failed": tests_total - tests_passed,
-            "pass_rate_pct": pass_rate,
-            "freshness_hours": freshness_hours,
-            "anomaly_flag": anomaly_flag
-          }
-          json.dump(out, open("dashboard_metrics.json","w"), indent=2)
-          cs.close(); conn.close()
-          PY
-
-          # expose to later steps
+          # For env mapping you can customize; here we keep plain 'gold'/'silver'
+          python scripts/python/compute_metrics.py \
+            --gold-schema   "gold" \
+            --silver-schema "silver" \
+            --master-schema "${{ inputs.master_schema }}" \
+            --sql-file "scripts/sql/kpi_rebuild_and_select.sql" \
+            --out "dashboard_metrics.json"
           echo "kpis=$(jq -c '.' dashboard_metrics.json)" >> "$GITHUB_OUTPUT"
 
-
-      - name: Render Markdown & HTML (publish to ./_site only)
+      - name: Render Markdown & HTML (publish to ./_site)
         run: |
           python - <<'PY'
           import json, markdown, os
           from datetime import datetime, timezone
           data = json.load(open("dashboard_metrics.json"))
           os.makedirs("_site", exist_ok=True)
+
+          trend = (f"{data.get('order_trend_pct')}%"
+                   if data.get('order_trend_pct') is not None else "n/a")
+          fresh = (f"{data.get('freshness_hours')}h"
+                   if data.get('freshness_hours') is not None else "n/a")
+
           md = f"""# Observability Dashboard
 
           **Run:** [{os.getenv('RUN_ID')}]({os.getenv('RUN_URL')})
@@ -237,28 +130,27 @@ jobs:
           - Week Orders: **{data['wk_orders']}**
           - Week Units Shipped: **{data['wk_units']}**
           - Avg Stock Turnover: **{data['avg_turnover']}**
-          - Orders Trend vs last week: **{(str(data['order_trend_pct'])+'%') if data['order_trend_pct'] is not None else 'n/a'}**
+          - Orders Trend vs last week: **{trend}**
           - Latest Date: **{data['last_date']}**
 
           ## Data Quality
           - Tests: **{data['tests_passed']} / {data['tests_total']}** passed (**{data['pass_rate_pct']}%**)
-          - Freshness (silver snapshot): **{data['freshness_hours']} hours** lag
+          - Freshness (silver snapshot): **{fresh}** lag
           - Anomaly Detected: **{':warning: YES' if data['anomaly_flag'] else 'No'}**
 
           ---
-          _Schemas use dynamic, per-issue isolation for safe iteration._
+          _Schemas use per-issue isolation for safe iteration where applicable._
           """
           open("_site/dashboard.md","w").write(md)
           open("_site/index.html","w").write(markdown.markdown(md, extensions=['tables']))
           PY
 
-      - name: Deploy to GitHub Pages (publish ./_site only)
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_site
 
-      # ---- Slack: Success ----
       - name: Slack — Success
         if: success() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.26.0
@@ -276,13 +168,12 @@ jobs:
                 ]},
                 { "type": "divider" },
                 { "type": "section", "text": { "type":"mrkdwn",
-                  "text": "*Business KPIs (last 7d)*\n• Orders: *${{ fromJson(steps.kpis.outputs.kpis).wk_orders }}*\n• Units: *${{ fromJson(steps.kpis.outputs.kpis).wk_units }}*\n• Turnover: *${{ fromJson(steps.kpis.outputs.kpis).avg_turnover }}*\n• Order trend: *${{ fromJson(steps.kpis.outputs.kpis).order_trend_pct || 'n/a' }}%*" } },
+                  "text": "*Business KPIs (7d)*\n• Orders: *${{ fromJson(steps.kpis.outputs.kpis).wk_orders }}*\n• Units: *${{ fromJson(steps.kpis.outputs.kpis).wk_units }}*\n• Turnover: *${{ fromJson(steps.kpis.outputs.kpis).avg_turnover }}*\n• Order trend: *${{ fromJson(steps.kpis.outputs.kpis).order_trend_pct != null && format('{0}%', fromJson(steps.kpis.outputs.kpis).order_trend_pct) || 'n/a' }}*" } },
                 { "type": "section", "text": { "type":"mrkdwn",
-                  "text": "*Data Quality*\n• Tests Passed: *${{ fromJson(steps.kpis.outputs.kpis).tests_passed }} / ${{ fromJson(steps.kpis.outputs.kpis).tests_total }}* (*${{ fromJson(steps.kpis.outputs.kpis).pass_rate_pct }}%*)\n• Freshness lag: *${{ fromJson(steps.kpis.outputs.kpis).freshness_hours || 'n/a' }}h*\n• Anomaly: *${{ fromJson(steps.kpis.outputs.kpis).anomaly_flag && ':warning: YES' || 'No' }}*" } }
+                  "text": "*Data Quality*\n• Tests: *${{ fromJson(steps.kpis.outputs.kpis).tests_passed }} / ${{ fromJson(steps.kpis.outputs.kpis).tests_total }}* (*${{ fromJson(steps.kpis.outputs.kpis).pass_rate_pct }}%*)\n• Freshness: *${{ fromJson(steps.kpis.outputs.kpis).freshness_hours != null && format('{0}h', fromJson(steps.kpis.outputs.kpis).freshness_hours) || 'n/a' }}*\n• Anomaly: *${{ fromJson(steps.kpis.outputs.kpis).anomaly_flag && ':warning: YES' || 'No' }}*" } }
               ]
             }
 
-      # ---- Slack: Failure ----
       - name: Slack — Failure
         if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.26.0

@@ -67,6 +67,8 @@ jobs:
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
+      requirements_path: "scripts/python/sec.req.txt"
+    secrets: inherit # pragma: allowlist secret
 
   pipelines:
     needs: [resolve-context, security]
@@ -77,7 +79,8 @@ jobs:
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
-      requirements_path: "scripts/python/requirements.txt"  # <— add this
+      requirements_path: "scripts/python/elt.req.txt"
+    secrets: inherit # pragma: allowlist secret
 
   observability:
     needs: [resolve-context, pipelines]
@@ -88,7 +91,9 @@ jobs:
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
-      requirements_path: "requirements/observability.txt"   # <— add this
+      requirements_path: "scripts/python/obs.req.txt"
+      master_schema: "master_data"
+    secrets: inherit # pragma: allowlist secret
 
   notify:
     needs: [resolve-context, security, pipelines, observability]
