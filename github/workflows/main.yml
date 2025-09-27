@@ -54,25 +54,39 @@ jobs:
           HAS_FEATURE=false
           HAS_CLEANUP=false
 
+          # Helper: case-insensitive grep for any of the given patterns
+          ci_grep() { grep -Eqi "$1" <<<"${2:-}"; }
+
           if [[ "${{ github.event_name }}" == "issues" ]]; then
-            # Issue-labeled runs
             LABELS=$(jq -r '.issue.labels[].name // empty' < "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')
-            if echo "$LABELS" | grep -Eq '(^|[[:space:]])feature($|[[:space:]])'; then
-              HAS_FEATURE=true; PROCEED=true
-            fi
-            if echo "$LABELS" | grep -Eq '(^|[[:space:]])cleanup($|[[:space:]])'; then
-              HAS_CLEANUP=true; PROCEED=true
-            fi
+            ci_grep '(^|[[:space:]])feature($|[[:space:]])' "$LABELS" && HAS_FEATURE=true && PROCEED=true
+            ci_grep '(^|[[:space:]])cleanup($|[[:space:]])' "$LABELS" && HAS_CLEANUP=true && PROCEED=true
+
           elif [[ "${{ github.event_name }}" == "push" ]]; then
-            # Manual triggers via commit messages (scan all commits in the push)
-            MSGS=$(jq -r '.commits[].message // empty' < "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')
-            if echo "$MSGS" | grep -q '\[#orchestrate\]\|\[#run ci\]\|\[#run elt\]'; then
+            HEAD_MSG=$(jq -r '.head_commit.message // empty' < "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')
+            ALL_MSGS=$(jq -r '.commits[].message // empty' < "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')
+            MSGS="$HEAD_MSG"$'\n'"$ALL_MSGS"
+
+            # Orchestrate whole chain
+            if ci_grep '(\[#?orchestrate\])|(^|[[:space:]])#orchestrate($|[[:space:]])' "$MSGS"; then
               PROCEED=true
             fi
-            if echo "$MSGS" | grep -q '\[#run security\]'; then RUN_SEC=yes; PROCEED=true; fi
-            if echo "$MSGS" | grep -q '\[#skip security\]'; then RUN_SEC=no;  PROCEED=true; fi
-            if echo "$MSGS" | grep -q '\[#run obs\]\|\[#run observability\]'; then RUN_OBS=yes; PROCEED=true; fi
-            if echo "$MSGS" | grep -q '\[#skip obs\]\|\[#skip observability\]'; then RUN_OBS=no;  PROCEED=true; fi
+
+            # Stage toggles
+            ci_grep '(\[#?run[[:space:]]+security\])|(^|[[:space:]])#run[[:space:]]+security($|[[:space:]])' "$MSGS" && RUN_SEC=yes && PROCEED=true
+            ci_grep '(\[#?skip[[:space:]]+security\])|(^|[[:space:]])#skip[[:space:]]+security($|[[:space:]])' "$MSGS" && RUN_SEC=no  && PROCEED=true
+
+            # ELT aliases
+            if ci_grep '(\[#?run[[:space:]]+(elt|ci)\])|(^|[[:space:]])#run[[:space:]]+(elt|ci)($|[[:space:]])' "$MSGS"; then
+              PROCEED=true
+            fi
+
+            # Observability toggles
+            ci_grep '(\[#?run[[:space:]]+(obs|observability)\])|(^|[[:space:]])#run[[:space:]]+(obs|observability)($|[[:space:]])' "$MSGS" && RUN_OBS=yes && PROCEED=true
+            ci_grep '(\[#?skip[[:space:]]+(obs|observability)\])|(^|[[:space:]])#skip[[:space:]]+(obs|observability)($|[[:space:]])' "$MSGS" && RUN_OBS=no  && PROCEED=true
+
+            echo "Detected head commit message:"
+            echo "$HEAD_MSG" | sed 's/^/  > /'
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             PROCEED=true
           fi
@@ -82,6 +96,7 @@ jobs:
           echo "run_observability=$RUN_OBS"       >> "$GITHUB_OUTPUT"
           echo "has_feature=$HAS_FEATURE"         >> "$GITHUB_OUTPUT"
           echo "has_cleanup=$HAS_CLEANUP"         >> "$GITHUB_OUTPUT"
+
 
   # ------------------------------------------
   # Resolve environment (prod/dev/ci)
