@@ -137,7 +137,7 @@ jobs:
 
   manual_cleanup:
     name: "Manual Cleanup (Issue)"
-    needs: resolve-context
+    needs: resolve_context
     if: >
       github.event_name == 'issues' &&
       contains(github.event.issue.labels.*.name, 'cleanup')
@@ -159,7 +159,7 @@ jobs:
   cleanup_on_failure:
     name: "Auto Cleanup (on failure/cancel)"
     needs:
-      - resolve-context
+      - resolve_context
       - provision_feature
       - security
       - pipelines
