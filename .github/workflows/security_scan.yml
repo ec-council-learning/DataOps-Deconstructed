@@ -1,6 +1,33 @@
 name: SQL SAST (PR-scoped, hardened)
 
 on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (dev/prod/ci)"
+        required: false
+        type: string
+      extra_flags:
+        description: "Optional flags or selectors"
+        required: false
+        type: string
+    requirements_path:                      
+        description: "Path to Python requirements file"
+        required: false
+        type: string        
+    secrets:
+      SNOWFLAKE_ACCOUNT:
+        required: false
+      SNOWFLAKE_USER:
+        required: false
+      SNOWFLAKE_PASSWORD:
+        required: false
+      SNOWFLAKE_ROLE:
+        required: false
+      SNOWFLAKE_WAREHOUSE:
+        required: false
+      SLACK_WEBHOOK_URL:
+        required: false
   pull_request:
     branches: [main, develop, 'feature/*']
     types: [opened, synchronize, reopened, ready_for_review]
@@ -54,15 +81,14 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             requirements.txt
-            scripts/**/requirements.txt
+            **/requirements.txt
+            ${{ inputs.requirements_path }}
 
-      - name: Pin & install tooling
+      - name: Install Python dependencies from requirements
+        if: inputs.requirements_path != ''
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install 'sqlfluff==3.0.3'
-          # Optional: converter if you prefer dedicated SARIF generation
-          # pip install 'sqlfluff-sarif==0.0.7'
+          pip install -r "${{ inputs.requirements_path }}"
 
       # ----- Change detection & commit validation -----
       - name: Detect changed files (SQL/DBT only)

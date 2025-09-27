@@ -1,0 +1,145 @@
+name: Platform Orchestrator (Security → ELT → Observability)
+
+on:
+  push:
+    tags:
+      - 'pipeline validation'
+    branches:
+      - main
+      - develop
+      - 'feature/*'
+  issues:
+    types: [labeled, closed, opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: orchestrator-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  RUN_SECURITY: ${{ vars.RUN_SECURITY || 'yes' }}
+  RUN_OBSERVABILITY: ${{ vars.RUN_OBSERVABILITY || 'yes' }}
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+jobs:
+  resolve-context:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      run_security: ${{ steps.resolve.outputs.run_security }}
+      run_observability: ${{ steps.resolve.outputs.run_observability }}
+    steps:
+      - name: Resolve environment & toggles
+        id: resolve
+        shell: bash
+        run: |
+          REF="${{ github.ref }}"
+          if [[ "$REF" == "refs/heads/main" ]]; then
+            ENV=prod
+          elif [[ "$REF" == "refs/heads/develop" ]]; then
+            ENV=dev
+          elif [[ "$REF" == refs/heads/feature/* || "$REF" == refs/tags/* ]]; then
+            ENV=ci
+          else
+            ENV=ci
+          fi
+
+          RUN_SEC="${RUN_SECURITY}"
+          RUN_OBS="${RUN_OBSERVABILITY}"
+
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            LABELS="$(jq -r '.issue.labels[].name' < "$GITHUB_EVENT_PATH" || true)"
+            if echo "$LABELS" | grep -qi 'skip-security'; then RUN_SEC=no; fi
+            if echo "$LABELS" | grep -qi 'skip-observability'; then RUN_OBS=no; fi
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "run_security=$RUN_SEC" >> $GITHUB_OUTPUT
+          echo "run_observability=$RUN_OBS" >> $GITHUB_OUTPUT
+
+  security:
+    needs: resolve-context
+    if: needs.resolve-context.outputs.run_security == 'yes'
+    uses: ./.github/workflows/security_scan.yml
+    with:
+      environment: ${{ needs.resolve-context.outputs.environment }}
+      extra_flags: ""
+      requirements_path: "requirements/security.txt"        # <— add this
+    secrets: inherit
+
+  pipelines:
+    needs: [resolve-context, security]
+    if: |
+      (needs.resolve-context.result == 'success') &&
+      (needs.security.result == 'success' || needs.security.result == 'skipped')
+    uses: ./.github/workflows/data_pipelines.yml
+    with:
+      environment: ${{ needs.resolve-context.outputs.environment }}
+      extra_flags: ""
+      requirements_path: "scripts/python/requirements.txt"  # <— add this
+    secrets: inherit
+
+  observability:
+    needs: [resolve-context, pipelines]
+    if: |
+      needs.resolve-context.outputs.run_observability == 'yes' &&
+      (needs.pipelines.result == 'success')
+    uses: ./.github/workflows/observability_metrics.yml
+    with:
+      environment: ${{ needs.resolve-context.outputs.environment }}
+      extra_flags: ""
+      requirements_path: "requirements/observability.txt"   # <— add this
+    secrets: inherit
+
+  notify:
+    needs: [resolve-context, security, pipelines, observability]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Compose summary
+        id: sum
+        run: |
+          SEC=${{ needs.resolve-context.outputs.run_security == 'yes' && needs.security.result || 'skipped' }}
+          PIPE=${{ needs.pipelines.result }}
+          OBS=${{ needs.resolve-context.outputs.run_observability == 'yes' && needs.observability.result || 'skipped' }}
+
+          OVERALL=success
+          [[ "$SEC" == "failure" || "$PIPE" == "failure" || "$OBS" == "failure" ]] && OVERALL=failure
+
+          echo "overall=$OVERALL" >> $GITHUB_OUTPUT
+          echo "security=$SEC" >> $GITHUB_OUTPUT
+          echo "pipelines=$PIPE" >> $GITHUB_OUTPUT
+          echo "observability=$OBS" >> $GITHUB_OUTPUT
+          echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "env=${{ needs.resolve-context.outputs.environment }}" >> $GITHUB_OUTPUT
+          echo "event=${{ github.event_name }}" >> $GITHUB_OUTPUT
+
+      - name: Slack — Orchestration Summary
+        if: env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                { "type":"header", "text": { "type":"plain_text", "text": "${{ steps.sum.outputs.overall == 'success' ? '✅ Orchestration Succeeded' : '🚨 Orchestration Failed' }}" } },
+                { "type":"section", "fields": [
+                  { "type":"mrkdwn", "text":"*Environment:* `${{ steps.sum.outputs.env }}`" },
+                  { "type":"mrkdwn", "text":"*Branch/Ref:* `${{ steps.sum.outputs.branch }}`" },
+                  { "type":"mrkdwn", "text":"*Triggered by:* `${{ steps.sum.outputs.event }}`" },
+                  { "type":"mrkdwn", "text":"*Run:* <${{ steps.sum.outputs.run_url }}|${{ github.run_id }}>" }
+                ]},
+                { "type":"divider" },
+                { "type":"section", "text": { "type":"mrkdwn",
+                  "text":"*Stages*\n• Security scan: *${{ steps.sum.outputs.security }}*\n• Data pipelines (ELT): *${{ steps.sum.outputs.pipelines }}*\n• Observability metrics: *${{ steps.sum.outputs.observability }}*" } },
+                { "type":"context", "elements": [
+                  { "type":"mrkdwn", "text":"Labels `skip-security` / `skip-observability` can alter stage execution for issue-triggered runs." }
+                ]}
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

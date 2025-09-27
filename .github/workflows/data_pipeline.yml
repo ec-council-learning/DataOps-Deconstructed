@@ -1,0 +1,288 @@
+name: Medallion ELT (Bronze→Silver→Gold)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (dev/prod/ci)"
+        required: false
+        type: string
+      extra_flags:
+        description: "Optional flags or selectors"
+        required: false
+        type: string
+    requirements_path:                      
+        description: "Path to Python requirements file"
+        required: false
+        type: string        
+    secrets:
+      SNOWFLAKE_ACCOUNT:
+        required: false
+      SNOWFLAKE_USER:
+        required: false
+      SNOWFLAKE_PASSWORD:
+        required: false
+      SNOWFLAKE_ROLE:
+        required: false
+      SNOWFLAKE_WAREHOUSE:
+        required: false
+      SLACK_WEBHOOK_URL:
+        required: false
+
+concurrency:
+  group: elt-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Snowflake / dbt
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+  SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+  SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+  # Slack (optional: your webhook may already be channel-bound)
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      dbt_env: ${{ steps.set-env.outputs.DBT_ENVIRONMENT }}
+      dbt_schema: ${{ steps.set-env.outputs.DBT_TARGET_SCHEMA }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11 (with pip cache)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            **/requirements.txt
+            ${{ inputs.requirements_path }}
+
+      - name: Install Python dependencies from requirements
+        if: inputs.requirements_path != ''
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "${{ inputs.requirements_path }}"
+
+      - name: Determine dbt target (env/schema)
+        id: set-env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "DBT_TARGET_SCHEMA=prod" >> $GITHUB_ENV
+            echo "DBT_ENVIRONMENT=prod" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "DBT_TARGET_SCHEMA=dev" >> $GITHUB_ENV
+            echo "DBT_ENVIRONMENT=dev" >> $GITHUB_ENV
+          else
+            ISSUE_ID=${{ github.run_id }} # isolated CI schema by run
+            echo "DBT_TARGET_SCHEMA=ci_${ISSUE_ID}" >> $GITHUB_ENV
+            echo "DBT_ENVIRONMENT=ci_cd" >> $GITHUB_ENV
+          fi
+          echo "DBT_TARGET_SCHEMA=${DBT_TARGET_SCHEMA}" >> $GITHUB_OUTPUT
+          echo "DBT_ENVIRONMENT=${DBT_ENVIRONMENT}" >> $GITHUB_OUTPUT
+
+      - name: Create dbt profiles (dynamic)
+        run: |
+          mkdir -p scripts/dbt
+          cat > scripts/dbt/profiles.yml <<'YML'
+          logistics_demo:
+            outputs:
+              prod:
+                type: snowflake
+                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+                user: "{{ env_var('SNOWFLAKE_USER') }}"
+                password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+                role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+                warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+                database: LOGISTICS_DEMO
+                schema: prod
+                threads: 4
+              dev:
+                type: snowflake
+                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+                user: "{{ env_var('SNOWFLAKE_USER') }}"
+                password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+                role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+                warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+                database: LOGISTICS_DEMO
+                schema: dev
+                threads: 4
+              ci_cd:
+                type: snowflake
+                account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+                user: "{{ env_var('SNOWFLAKE_USER') }}"
+                password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+                role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+                warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+                database: LOGISTICS_DEMO
+                schema: "{{ env_var('DBT_TARGET_SCHEMA', 'default') }}"
+                threads: 4
+            target: "{{ env_var('DBT_ENVIRONMENT', 'ci_cd') }}"
+          YML
+
+      - name: dbt deps
+        working-directory: scripts/dbt
+        run: dbt deps --profiles-dir ./
+
+  # ===== E (Extract) + L (Load) → Bronze =====
+  bronze_extract_load:
+    needs: setup
+    runs-on: ubuntu-latest
+    env:
+      DBT_ENVIRONMENT: ${{ needs.setup.outputs.dbt_env }}
+      DBT_TARGET_SCHEMA: ${{ needs.setup.outputs.dbt_schema }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install ELT dependencies
+        run: |
+          pip install dbt-core dbt-snowflake snowflake-connector-python pandas
+      - name: Ensure profiles
+        run: test -f scripts/dbt/profiles.yml || exit 1
+
+      # Option A (demo): use seeds as extract artifacts into Bronze
+      - name: Extract from sources (demo via dynamic seeds)
+        run: |
+          # If you have a real extractor, swap this for: python scripts/python/extract_sources.py
+          python scripts/python/create_seed.py
+
+      - name: Load Bronze (seed/external→tables)
+        working-directory: scripts/dbt
+        run: |
+          dbt seed --profiles-dir ./
+          # If models are tagged/path'ed by layer, use one of:
+          # dbt run --select tag:bronze --profiles-dir ./
+          dbt run --select path:models/bronze/ --profiles-dir ./
+
+      - name: Bronze basic checks (schema & rowcount smoke)
+        working-directory: scripts/dbt
+        run: |
+          dbt test --select tag:bronze,tag:smoke+ --profiles-dir ./
+
+  # ===== T (Transform) → Silver =====
+  silver_transform:
+    needs: bronze_extract_load
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dbt
+        run: pip install dbt-core dbt-snowflake
+      - name: Build Silver (cleaned/conformed)
+        working-directory: scripts/dbt
+        run: |
+          dbt run --select path:models/silver/ --profiles-dir ./
+      - name: Silver tests (constraints, nullability, referential)
+        id: silver_tests
+        working-directory: scripts/dbt
+        run: |
+          dbt test --select path:models/silver/ --profiles-dir ./ \
+            --output json > ../silver_test_results.json || true
+          PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../silver_test_results.json)
+          TOTAL=$(jq '.results | length' ../silver_test_results.json)
+          RATE=$(python - <<'PY'
+          import json; d=json.load(open("silver_test_results.json"))
+          tot=len(d.get("results",[])) or 1
+          pas=sum(1 for r in d.get("results",[]) if r.get("status")=="pass")
+          print(round(100*pas/tot,1))
+          PY
+          )
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "rate=$RATE" >> $GITHUB_OUTPUT
+      - name: Silver source freshness
+        id: silver_fresh
+        working-directory: scripts/dbt
+        run: |
+          # requires sources configured with freshness in schema.yml
+          dbt source freshness --profiles-dir ./ --output json > ../silver_fresh.json || true
+          LAG=$(jq '[.sources[].freshness.status] | length' ../silver_fresh.json >/dev/null 2>&1; echo $?)
+          echo "file=../silver_fresh.json" >> $GITHUB_OUTPUT
+
+  # ===== T (Transform) → Gold =====
+  gold_transform:
+    needs: silver_transform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dbt
+        run: pip install dbt-core dbt-snowflake
+      - name: Build Gold (business marts)
+        working-directory: scripts/dbt
+        run: |
+          dbt run --select path:models/gold/ --profiles-dir ./
+      - name: Gold tests (business rules)
+        id: gold_tests
+        working-directory: scripts/dbt
+        run: |
+          dbt test --select path:models/gold/ --profiles-dir ./ --output json > ../gold_test_results.json || true
+          PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../gold_test_results.json)
+          TOTAL=$(jq '.results | length' ../gold_test_results.json)
+          RATE=$(python - <<'PY'
+          import json; d=json.load(open("gold_test_results.json"))
+          tot=len(d.get("results",[])) or 1
+          pas=sum(1 for r in d.get("results",[]) if r.get("status")=="pass")
+          print(round(100*pas/tot,1))
+          PY
+          )
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "rate=$RATE" >> $GITHUB_OUTPUT
+
+  # ===== ELT Health Notification (Slack) =====
+  notify:
+    needs: [silver_transform, gold_transform]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Summarize ELT outcome
+        id: sum
+        run: |
+          # Pull outputs via the GitHub context (passed implicitly in needs)
+          echo "silver_passed=${{ needs.silver_transform.outputs.passed }}" >> $GITHUB_OUTPUT
+          echo "silver_total=${{ needs.silver_transform.outputs.total }}" >> $GITHUB_OUTPUT
+          echo "silver_rate=${{ needs.silver_transform.outputs.rate }}" >> $GITHUB_OUTPUT
+          echo "gold_passed=${{ needs.gold_transform.outputs.passed }}" >> $GITHUB_OUTPUT
+          echo "gold_total=${{ needs.gold_transform.outputs.total }}" >> $GITHUB_OUTPUT
+          echo "gold_rate=${{ needs.gold_transform.outputs.rate }}" >> $GITHUB_OUTPUT
+          echo "status=${{ contains(join(needs.*.result, ','), 'failure') && 'FAIL' || 'OK' }}" >> $GITHUB_OUTPUT
+
+      - name: Slack — ELT Status
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                { "type":"header", "text": { "type":"plain_text", "text":"${{ steps.sum.outputs.status == 'OK' && '✅ Medallion ELT Success' || '🚨 Medallion ELT Failure' }}" } },
+                { "type":"section", "fields": [
+                  { "type":"mrkdwn", "text":"*Branch:* `${{ github.ref_name }}`" },
+                  { "type":"mrkdwn", "text":"*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.run_id }}>" }
+                ]},
+                { "type":"divider" },
+                { "type":"section", "text": { "type":"mrkdwn",
+                  "text":"*Silver (conformed)*\n• Tests: *${{ needs.silver_transform.outputs.passed || '0' }} / ${{ needs.silver_transform.outputs.total || '0' }}* (*${{ needs.silver_transform.outputs.rate || '0' }}%*)" }
+                },
+                { "type":"section", "text": { "type":"mrkdwn",
+                  "text":"*Gold (business marts)*\n• Tests: *${{ needs.gold_transform.outputs.passed || '0' }} / ${{ needs.gold_transform.outputs.total || '0' }}* (*${{ needs.gold_transform.outputs.rate || '0' }}%*)" }
+                },
+                { "type":"context", "elements":[
+                  { "type":"mrkdwn", "text":"Layers executed: *Bronze → Silver → Gold*. Freshness checks run at Silver." }
+                ]}
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
