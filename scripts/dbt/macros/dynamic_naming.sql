@@ -13,10 +13,17 @@
 {% endmacro %}
 
 {% macro generate_alias_name(custom_alias_name, node) %}
+    {# Base alias: use custom if provided, else the model name #}
+    {% if custom_alias_name is not none and custom_alias_name | trim != '' %}
+        {% set base = custom_alias_name | trim %}
+    {% else %}
+        {% set base = node.name %}
+    {% endif %}
+
     {% set issue_id = get_issue_id() %}
     {% if issue_id != 'no_issue' %}
-        {{ custom_alias_name | trim }}_issue_{{ issue_id }}
+        {{ base }}_issue_{{ issue_id }}
     {% else %}
-        {{ custom_alias_name | trim }}
+        {{ base }}
     {% endif %}
 {% endmacro %}
