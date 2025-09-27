@@ -40,6 +40,7 @@ jobs:
       SQLFLUFF_DIALECT: snowflake
       SQLFLUFF_CONFIG: .sqlfluff
       IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
       # ----- Runner & repo prep -----
@@ -184,7 +185,7 @@ jobs:
           payload: |
             { "text": "🚨 SQL SAST failed on `${{ github.ref_name }}` for PR #${{ github.event.number }}. See PR annotations and SARIF for details." }
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
       - name: Slack — success (optional, skips on forks)
@@ -194,7 +195,7 @@ jobs:
           payload: |
             { "text": "✅ SQL SAST passed on `${{ github.ref_name }}` for PR #${{ github.event.number }}." }
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
       # ----- Enforce outcome -----
