@@ -91,7 +91,7 @@ jobs:
     if: |
       needs.resolve-context.outputs.run_observability == 'yes' &&
       needs.pipelines.result == 'success'
-    uses: ./.github/workflows/observability_metrics.yml
+    uses: ./.github/workflows/observability.yml
     with:
       environment: ${{ needs.resolve-context.outputs.environment }}
       extra_flags: ""
