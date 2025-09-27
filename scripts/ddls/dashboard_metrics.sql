@@ -1,6 +1,8 @@
-CREATE SCHEMA IF NOT EXISTS LOGISTICS_DEMO.{{SCHEMA_NAME}};
+-- 1) Ensure KPI schema exists
+CREATE SCHEMA IF NOT EXISTS LOGISTICS_DEMO.{{GOLD_SCHEMA}};
 
-CREATE OR REPLACE TABLE LOGISTICS_DEMO.{{SCHEMA_NAME}}.DAILY_INVENTORY_KPIS AS
+-- 2) Rebuild KPI table in the gold schema from silver snapshot + master_data seeds
+CREATE OR REPLACE TABLE LOGISTICS_DEMO.{{GOLD_SCHEMA}}.DAILY_INVENTORY_KPIS AS
 WITH s AS (
     SELECT
         movement_date AS report_date,
@@ -10,23 +12,23 @@ WITH s AS (
         COALESCE(qty_shipped, 0)     AS qty_shipped,
         COALESCE(qty_replenished, 0) AS qty_replenished,
         COALESCE(qty_adjusted, 0)    AS qty_adjusted
-    FROM LOGISTICS_DEMO.{{SCHEMA_NAME | replace('gold','silver') }}.DAILY_INVENTORY_SNAPSHOT
+    FROM LOGISTICS_DEMO.{{SILVER_SCHEMA}}.DAILY_INVENTORY_SNAPSHOT
 )
 SELECT
     s.report_date                                   AS REPORT_DATE,
-    w.warehouse_name                                AS WAREHOUSE_NAME,
-    p.product_name                                  AS PRODUCT_NAME,
+    w.WAREHOUSE_NAME                                AS WAREHOUSE_NAME,
+    p.PRODUCT_NAME                                  AS PRODUCT_NAME,
     s.qty_ordered                                   AS TOTAL_ORDERS,
     s.qty_shipped                                   AS TOTAL_UNITS_SHIPPED,
     s.qty_replenished                               AS TOTAL_UNITS_REPLENISHED,
-    ROUND( s.qty_shipped / NULLIF(s.qty_replenished + 1, 0), 2) AS STOCK_TURNOVER_RATIO
-FROM LOGISTICS_DEMO.{{SCHEMA_NAME | replace('gold','master_data') }}.warehouses w
+    ROUND(s.qty_shipped / NULLIF(s.qty_replenished + 1, 0), 2) AS STOCK_TURNOVER_RATIO
+FROM LOGISTICS_DEMO.{{MASTER_SCHEMA}}.WAREHOUSES w
 JOIN s
-  ON s.warehouse_id = w.warehouse_id
-JOIN LOGISTICS_DEMO.{{SCHEMA_NAME | replace('gold','master_data') }}.products p
-  ON s.product_id = p.product_id;
+  ON s.warehouse_id = w.WAREHOUSE_ID
+JOIN LOGISTICS_DEMO.{{MASTER_SCHEMA}}.PRODUCTS p
+  ON s.product_id = p.PRODUCT_ID;
 
--- final SELECT (the script will return this result set)
+-- 3) Final SELECT (this is the result set the Python returns)
 SELECT
     REPORT_DATE,
     WAREHOUSE_NAME,
@@ -35,6 +37,6 @@ SELECT
     TOTAL_UNITS_SHIPPED,
     TOTAL_UNITS_REPLENISHED,
     STOCK_TURNOVER_RATIO
-FROM LOGISTICS_DEMO.{{SCHEMA_NAME}}.DAILY_INVENTORY_KPIS
+FROM LOGISTICS_DEMO.{{GOLD_SCHEMA}}.DAILY_INVENTORY_KPIS
 ORDER BY REPORT_DATE DESC
 LIMIT 10;

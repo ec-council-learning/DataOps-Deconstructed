@@ -68,7 +68,6 @@ jobs:
             echo "DBT_ENVIRONMENT=ci_cd"             >> $GITHUB_ENV
           fi
 
-      # --- Optional issue-driven automation ---
       - name: Handle Feature Request Automation
         if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'feature')
         run: |
@@ -100,6 +99,10 @@ jobs:
           dbt --version
           dbt parse   --profiles-dir . --no-partial-parse
           dbt compile --profiles-dir .
+
+      - name: Run SQLFluff Linting (SAST Scan)
+        run: |
+          sqlfluff lint models/ --dialect snowflake
 
       - name: Run DBT Seed Data Load
         working-directory: scripts/dbt
