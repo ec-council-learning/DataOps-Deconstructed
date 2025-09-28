@@ -8,12 +8,10 @@ from faker import Faker
 
 fake = Faker()
 
-# Directory to store generated seed files relative to this script
-SEED_DIR = Path(__file__).resolve().parents[1] / "dbt" / "seeds"
-SEED_DIR.mkdir(parents=True, exist_ok=True)
-
+SEED_DIR = '../scripts/dbt/seeds/'
 NUM_ROWS = 9999
 
+os.makedirs(SEED_DIR, exist_ok=True)
 
 def generate_products() -> None:
     """Generate a products.csv file with synthetic product data."""
