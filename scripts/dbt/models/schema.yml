@@ -1,9 +1,9 @@
 version: 2
 
+# -------------------------------------------------------------------------
+# Bronze staging models
+# -------------------------------------------------------------------------
 models:
-  # --------------------------------------------------------------------------
-  # Bronze staging models
-  # --------------------------------------------------------------------------
   - name: stg_inventory_movements
     description: "Staging model for Bronze inventory movements."
     columns:
@@ -140,11 +140,11 @@ models:
         tests:
           - not_null
 
-  # --------------------------------------------------------------------------
-  # Silver models
-  # --------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# Silver model
+# -------------------------------------------------------------------------
   - name: daily_inventory_snapshot
-    description: "Daily snapshot combining Bronze inventory movements and customer orders."
+    description: "Daily snapshot combining inventory and orders data."
     columns:
       - name: movement_date
         tests:
@@ -167,9 +167,9 @@ models:
         tests:
           - not_null
 
-  # --------------------------------------------------------------------------
-  # Gold models
-  # --------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# Gold model
+# -------------------------------------------------------------------------
   - name: daily_inventory_kpis
     description: "Daily aggregated inventory KPIs for business analytics."
     columns:
