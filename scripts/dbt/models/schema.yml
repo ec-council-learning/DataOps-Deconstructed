@@ -1,103 +1,150 @@
 version: 2
 
-sources:
-  - name: bronze
-    # Resolve to the active target schema so Silver always reads the Bronze tables
-    schema: "{{ target.schema }}"
-    tables:
-      - name: inventory_movements
-        description: "Bronze inventory movement events."
-      - name: customer_orders
-        description: "Bronze customer orders."
-      - name: products
-        description: "Bronze products master data."
-      - name: warehouses
-        description: "Bronze warehouses master data."
 models:
+  # --------------------------------------------------------------------------
+  # Bronze staging models
+  # --------------------------------------------------------------------------
   - name: stg_inventory_movements
-    description: "Staging model for inventory movements data."
+    description: "Staging model for Bronze inventory movements."
     columns:
-      - name: movement_id
+      - name: MOVEMENT_ID
         description: "Unique identifier for each inventory movement."
         tests:
           - unique
           - not_null
-      - name: product_id
+      - name: PRODUCT_ID
         description: "Identifier of the product."
         tests:
           - not_null
           - relationships:
               to: ref('stg_products')
-              field: product_id
-      - name: warehouse_id
+              field: PRODUCT_ID
+      - name: WAREHOUSE_ID
         description: "Identifier of the warehouse."
         tests:
           - not_null
           - relationships:
               to: ref('stg_warehouses')
-              field: warehouse_id
-      - name: movement_date
+              field: WAREHOUSE_ID
+      - name: MOVEMENT_DATE
         description: "Date of the inventory movement."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_of_type:
               column_type: date
-      - name: quantity
+      - name: QUANTITY
         description: "Number of units moved."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: -1000
               max_value: 1000
-      - name: movement_type
+      - name: MOVEMENT_TYPE
         description: "Type of inventory movement."
         tests:
           - accepted_values:
               values: ['replenishment', 'outbound', 'adjustment']
 
-  - name: stg_customer_orders
-    description: "Staging model for customer orders data."
+  - name: stg_customers_orders
+    description: "Staging model for Bronze customer orders."
     columns:
-      - name: order_id
+      - name: ORDER_ID
         description: "Unique identifier for customer order."
         tests:
           - unique
           - not_null
-      - name: product_id
+      - name: PRODUCT_ID
         description: "Identifier of the product ordered."
         tests:
           - not_null
           - relationships:
               to: ref('stg_products')
-              field: product_id
-      - name: warehouse_id
+              field: PRODUCT_ID
+      - name: WAREHOUSE_ID
         description: "Warehouse fulfilling the order."
         tests:
           - not_null
           - relationships:
               to: ref('stg_warehouses')
-              field: warehouse_id
-      - name: order_date
+              field: WAREHOUSE_ID
+      - name: ORDER_DATE
         description: "Date of the customer order."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_of_type:
               column_type: date
-      - name: quantity
+      - name: QUANTITY
         description: "Number of units ordered."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 1
               max_value: 100
-      - name: sales_channel
+      - name: SALES_CHANNEL
         description: "Sales channel of the order."
         tests:
           - accepted_values:
               values: ['online', 'retail', 'wholesale']
 
+  - name: stg_products
+    description: "Staging model for Bronze products master data."
+    columns:
+      - name: PRODUCT_ID
+        description: "Unique identifier for each product."
+        tests:
+          - unique
+          - not_null
+      - name: PRODUCT_NAME
+        description: "Name of the product."
+        tests:
+          - not_null
+      - name: CATEGORY
+        description: "Product category."
+        tests:
+          - not_null
+      - name: UNIT_COST
+        description: "Unit cost of the product."
+        tests:
+          - not_null
+      - name: WEIGHT_KG
+        description: "Weight of the product in kilograms."
+        tests:
+          - not_null
+      - name: DIMENSIONS_CM
+        description: "Dimensions of the product in centimeters."
+        tests:
+          - not_null
+
+  - name: stg_warehouses
+    description: "Staging model for Bronze warehouses master data."
+    columns:
+      - name: WAREHOUSE_ID
+        description: "Unique identifier for each warehouse."
+        tests:
+          - unique
+          - not_null
+      - name: WAREHOUSE_NAME
+        description: "Name of the warehouse."
+        tests:
+          - not_null
+      - name: LOCATION
+        description: "Location of the warehouse."
+        tests:
+          - not_null
+      - name: CAPACITY_UNITS
+        description: "Capacity of the warehouse in units."
+        tests:
+          - not_null
+      - name: MANAGER_NAME
+        description: "Name of the warehouse manager."
+        tests:
+          - not_null
+
+  # --------------------------------------------------------------------------
+  # Silver models
+  # --------------------------------------------------------------------------
   - name: daily_inventory_snapshot
-    description: "Daily snapshot combining inventory and orders data."
+    description: "Daily snapshot combining Bronze inventory movements and customer orders."
     columns:
       - name: movement_date
         tests:
@@ -120,6 +167,9 @@ models:
         tests:
           - not_null
 
+  # --------------------------------------------------------------------------
+  # Gold models
+  # --------------------------------------------------------------------------
   - name: daily_inventory_kpis
     description: "Daily aggregated inventory KPIs for business analytics."
     columns:
