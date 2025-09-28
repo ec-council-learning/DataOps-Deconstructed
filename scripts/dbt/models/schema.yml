@@ -1,11 +1,5 @@
 version: 2
 
-sources:
-  - name: "bronze"
-    tables:
-      - name: "inventory_movements"
-      - name: "customer_orders"
-
 models:
   - name: stg_inventory_movements
     description: "Staging model for inventory movements data."
