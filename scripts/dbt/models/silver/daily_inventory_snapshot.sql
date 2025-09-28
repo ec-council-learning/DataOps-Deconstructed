@@ -1,4 +1,5 @@
--- daily snapshot combining staged inventory movements and customer orders
+-- scripts/dbt/models/silver/daily_inventory_snapshot.sql
+
 WITH inventory AS (
     SELECT
         movement_date,
@@ -24,6 +25,7 @@ orders AS (
 SELECT
     inv.movement_date,
     inv.warehouse_id,
+    -- Use uppercase column names from staging models
     wh.warehouse_name,
     inv.product_id,
     prd.product_name,
@@ -38,5 +40,11 @@ LEFT JOIN orders ord
   ON inv.movement_date = ord.movement_date
   AND inv.warehouse_id = ord.warehouse_id
   AND inv.product_id = ord.product_id
-LEFT JOIN {{ ref('products') }}    prd ON inv.product_id   = prd.product_id
-LEFT JOIN {{ ref('warehouses') }} wh ON inv.warehouse_id = wh.warehouse_id
+-- Join to staging models for products and warehouses instead of referencing seeds
+-- Using the stg_ models here ensures consistent column names and centralises
+-- any transformations applied in the bronze layer. These staging models are
+-- defined in scripts/dbt/models/bronze.
+LEFT JOIN {{ ref('stg_products') }} prd
+  ON inv.product_id = prd.product_id
+LEFT JOIN {{ ref('stg_warehouses') }} wh
+  ON inv.warehouse_id = wh.warehouse_id

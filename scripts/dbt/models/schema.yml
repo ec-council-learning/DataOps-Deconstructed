@@ -21,7 +21,7 @@ models:
           - not_null
           - relationships:
               # In dbt versions prior to 1.10, pass parameters directly rather than under `arguments`.
-              to: ref('products')
+              to: ref('stg_products')
               field: product_id
       - name: WAREHOUSE_ID
         description: "Identifier of the warehouse."
@@ -29,7 +29,7 @@ models:
           - not_null
           - relationships:
               # Pass `to` and `field` directly for the relationships test.
-              to: ref('warehouses')
+              to: ref('stg_warehouses')
               field: warehouse_id
       - name: MOVEMENT_DATE
         description: "Date of the inventory movement."
@@ -64,14 +64,14 @@ models:
           - not_null
           - relationships:
               # Pass test parameters directly (dbt <1.10).
-              to: ref('products')
+              to: ref('stg_products')
               field: product_id
       - name: WAREHOUSE_ID
         description: "Warehouse fulfilling the order."
         tests:
           - not_null
           - relationships:
-              to: ref('warehouses')
+              to: ref('stg_warehouses')
               field: warehouse_id
       - name: ORDER_DATE
         description: "Date of the customer order."

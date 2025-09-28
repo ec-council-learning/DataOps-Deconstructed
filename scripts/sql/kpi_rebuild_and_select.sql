@@ -6,7 +6,7 @@
 -- to point at the correct target schemas (e.g. a dynamic `ci_<run_id>`
 -- schema for CI runs).  The KPI table is rebuilt from the
 -- `DAILY_INVENTORY_SNAPSHOT` table in the silver schema and joined with
--- master data seeds (`warehouses` and `products`) which are loaded via
+-- master data seeds (`stg_warehouses` and `stg_products`) which are loaded via
 -- dbt seeds.  Once the KPI table is refreshed, the final SELECT
 -- returns a preview of the latest rows (10 by default).
 
@@ -34,10 +34,10 @@ SELECT
     s.qty_shipped                                   AS TOTAL_UNITS_SHIPPED,
     s.qty_replenished                               AS TOTAL_UNITS_REPLENISHED,
     ROUND(s.qty_shipped / NULLIF(s.qty_replenished + 1, 0), 2) AS STOCK_TURNOVER_RATIO
-FROM LOGISTICS_DEMO.{{MASTER_SCHEMA}}.WAREHOUSES w
+FROM LOGISTICS_DEMO.{{MASTER_SCHEMA}}.stg_warehouses w
 JOIN s
   ON s.warehouse_id = w.WAREHOUSE_ID
-JOIN LOGISTICS_DEMO.{{MASTER_SCHEMA}}.PRODUCTS p
+JOIN LOGISTICS_DEMO.{{MASTER_SCHEMA}}.stg_products p
   ON s.product_id = p.PRODUCT_ID;
 
 -- 3) Final SELECT (this is the result set the Python returns)
