@@ -120,6 +120,13 @@ jobs:
       - name: Assert profiles.yml
         run: test -f scripts/dbt/profiles.yml
 
+      - name: Verify DBT project (parse/compile)
+        working-directory: scripts/dbt
+        run: |
+          dbt --version
+          dbt parse   --profiles-dir . --no-partial-parse
+          dbt compile --profiles-dir .
+
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 
