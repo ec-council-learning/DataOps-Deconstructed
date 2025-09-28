@@ -146,6 +146,22 @@ jobs:
           open("_site/index.html","w").write(markdown.markdown(md, extensions=['tables']))
           PY
 
+      - name: Generate dbt docs
+        working-directory: scripts/dbt
+        env:
+          DBT_ENVIRONMENT: ${{ inputs.environment || 'prod' }}
+        run: dbt docs generate --target "${DBT_ENVIRONMENT}"
+
+      - name: Copy dbt docs into _site
+        run: |
+          mkdir -p _site/dbt-docs
+          cp -R scripts/dbt/target/*.json _site/dbt-docs/ || true
+          cp -R scripts/dbt/target/manifest.json _site/dbt-docs/ || true
+          # copy the docs site (target/docs) if it exists
+          if [ -d scripts/dbt/target/docs ]; then
+            cp -R scripts/dbt/target/docs/* _site/dbt-docs/
+          fi
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:

@@ -72,7 +72,7 @@ jobs:
           echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA" >> "$GITHUB_OUTPUT"
 
   # ===== E (Extract) + L (Load) → Bronze =====
-  bronze_extract_load:
+  bronze_layer:
     needs: setup
     runs-on: ubuntu-latest
     env:
@@ -107,16 +107,16 @@ jobs:
       - name: Load Bronze (seed → tables)
         working-directory: scripts/dbt
         run: |
-          dbt seed
-          dbt run --select path:models/bronze/
+          dbt seed --target ${{ needs.setup.outputs.dbt_env }}
+          dbt run --select path:models/bronze/ --target ${{ needs.setup.outputs.dbt_env }}
 
       - name: Bronze basic checks (schema & rowcount smoke)
         working-directory: scripts/dbt
-        run: dbt test --select tag:bronze,tag:smoke+
+        run: dbt test --select tag:bronze,tag:smoke+ --target ${{ needs.setup.outputs.dbt_env }}
 
   # ===== T (Transform) → Silver =====
-  silver_transform:
-    needs: bronze_extract_load
+  silver_layer:
+    needs: bronze_layer
     runs-on: ubuntu-latest
     outputs:
       passed: ${{ steps.silver_tests.outputs.passed }}
@@ -150,13 +150,13 @@ jobs:
 
       - name: Build Silver (cleaned/conformed)
         working-directory: scripts/dbt
-        run: dbt run --select path:models/silver/
+        run: dbt run --select path:models/silver/ --target ${{ needs.setup.outputs.dbt_env }}
 
       - name: Silver tests (constraints, nullability, referential)
         id: silver_tests
         working-directory: scripts/dbt
         run: |
-          dbt test --select path:models/silver/ --output json > ../silver_test_results.json || true
+          dbt test --select path:models/silver/ --target ${{ needs.setup.outputs.dbt_env }} --output json > ../silver_test_results.json || true
           PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../silver_test_results.json)
           TOTAL=$(jq '.results | length' ../silver_test_results.json)
           RATE=$(python - <<'PY'
@@ -178,8 +178,8 @@ jobs:
           echo "file=../silver_fresh.json" >> $GITHUB_OUTPUT
 
   # ===== T (Transform) → Gold =====
-  gold_transform:
-    needs: silver_transform
+  gold_layer:
+    needs: silver_layer
     runs-on: ubuntu-latest
     outputs:
       passed: ${{ steps.gold_tests.outputs.passed }}
@@ -214,13 +214,13 @@ jobs:
 
       - name: Build Gold (business marts)
         working-directory: scripts/dbt
-        run: dbt run --select path:models/gold/
+        run: dbt run --select path:models/gold/ --target ${{ needs.setup.outputs.dbt_env }}
 
       - name: Gold tests (business rules)
         id: gold_tests
         working-directory: scripts/dbt
         run: |
-          dbt test --select path:models/gold/ --output json > ../gold_test_results.json || true
+          dbt test --select path:models/gold/ --target ${{ needs.setup.outputs.dbt_env }} --output json > ../gold_test_results.json || true
           PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../gold_test_results.json)
           TOTAL=$(jq '.results | length' ../gold_test_results.json)
           RATE=$(python - <<'PY'
@@ -236,20 +236,20 @@ jobs:
 
   # ===== ELT Health Notification (Slack) =====
   notify:
-    needs: [silver_transform, gold_transform]
+    needs: [silver_layer, gold_layer]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Summarize ELT outcome
         id: sum
         run: |
-          echo "silver_passed=${{ needs.silver_transform.outputs.passed || '0' }}" >> $GITHUB_OUTPUT
-          echo "silver_total=${{ needs.silver_transform.outputs.total  || '0' }}" >> $GITHUB_OUTPUT
-          echo "silver_rate=${{ needs.silver_transform.outputs.rate   || '0' }}" >> $GITHUB_OUTPUT
-          echo "gold_passed=${{ needs.gold_transform.outputs.passed   || '0' }}" >> $GITHUB_OUTPUT
-          echo "gold_total=${{ needs.gold_transform.outputs.total     || '0' }}" >> $GITHUB_OUTPUT
-          echo "gold_rate=${{ needs.gold_transform.outputs.rate       || '0' }}" >> $GITHUB_OUTPUT
-          echo "status=${{ (needs.silver_transform.result == 'success' && needs.gold_transform.result == 'success') && 'OK' || 'FAIL' }}" >> $GITHUB_OUTPUT
+          echo "silver_passed=${{ needs.silver_layer.outputs.passed || '0' }}" >> $GITHUB_OUTPUT
+          echo "silver_total=${{ needs.silver_layer.outputs.total  || '0' }}" >> $GITHUB_OUTPUT
+          echo "silver_rate=${{ needs.silver_layer.outputs.rate   || '0' }}" >> $GITHUB_OUTPUT
+          echo "gold_passed=${{ needs.gold_layer.outputs.passed   || '0' }}" >> $GITHUB_OUTPUT
+          echo "gold_total=${{ needs.gold_layer.outputs.total     || '0' }}" >> $GITHUB_OUTPUT
+          echo "gold_rate=${{ needs.gold_layer.outputs.rate       || '0' }}" >> $GITHUB_OUTPUT
+          echo "status=${{ (needs.silver_layer.result == 'success' && needs.gold_layer.result == 'success') && 'OK' || 'FAIL' }}" >> $GITHUB_OUTPUT
 
       - name: Slack — ELT Status
         uses: slackapi/slack-github-action@v1.26.0
