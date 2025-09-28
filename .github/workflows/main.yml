@@ -103,7 +103,7 @@ jobs:
   # ---------------- Provision (always runs; no-ops unless feature label) ----------------
   provision_feature:
     name: "Provision Feature Schema"
-    needs: [resolve_context, gate]
+    needs: [resolve_context, gate, security]
     runs-on: ubuntu-latest
     outputs:
       feature_schema: ${{ steps.prov.outputs.feature_schema }}
