@@ -19,4 +19,4 @@ SELECT
     unit_cost,
     weight_kg,
     dimensions_cm
-FROM {{ ref('stg_products') }}
+FROM {{ ref('products') }}

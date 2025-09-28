@@ -19,4 +19,4 @@ SELECT
     location,
     capacity_units,
     manager_name
-FROM {{ ref('stg_warehouses') }}
+FROM {{ ref('warehouses') }}
