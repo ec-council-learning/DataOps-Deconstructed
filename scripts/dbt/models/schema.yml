@@ -1,5 +1,18 @@
 version: 2
 
+sources:
+  - name: bronze
+    # Resolve to the active target schema so Silver always reads the Bronze tables
+    schema: "{{ target.schema }}"
+    tables:
+      - name: stg_inventory_movements
+        description: "Bronze inventory movement events."
+      - name: stg_customer_orders
+        description: "Bronze customer orders."
+      - name: stg_products
+        description: "Bronze products master data."
+      - name: stg_warehouses
+        description: "Bronze warehouses master data."
 models:
   - name: stg_inventory_movements
     description: "Staging model for inventory movements data."
