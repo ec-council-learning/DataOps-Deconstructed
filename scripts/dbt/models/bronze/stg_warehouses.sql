@@ -1,22 +1,18 @@
--- scripts/dbt/models/bronze/stg_warehouses.sql
-
---
--- Staging model for the warehouses seed.
---
--- The warehouses seed (warehouses.csv) is generated via the create_seed.py script and
--- contains the following columns:
---   warehouse_id, warehouse_name, location, capacity_units, manager_name
---
--- This model selects from the seed using the ref() macro and aliases each
--- column to an uppercase name. Aligning column names in uppercase with other
--- staging models improves readability and ensures consistency across the
--- project. The resulting model can be referenced from downstream layers
--- (e.g. silver) using ref('stg_warehouses').
-
-SELECT
+-- Stage FROM Bronze Snowflake table (not seeds)
+with raw as (
+  select
     warehouse_id,
     warehouse_name,
     location,
     capacity_units,
     manager_name
-FROM {{ ref('warehouses') }}
+  from {{ source('bronze', 'warehouses') }}
+)
+
+select
+  warehouse_id   as WAREHOUSE_ID,
+  warehouse_name as WAREHOUSE_NAME,
+  location       as LOCATION,
+  capacity_units as CAPACITY_UNITS,
+  manager_name   as MANAGER_NAME
+from raw
