@@ -4,41 +4,39 @@ models:
   - name: stg_inventory_movements
     description: "Staging model for inventory movements data."
     columns:
-      - name: MOVEMENT_ID
+      - name: movement_id
         description: "Unique identifier for each inventory movement."
         tests:
           - unique
           - not_null
-      - name: PRODUCT_ID
+      - name: product_id
         description: "Identifier of the product."
         tests:
           - not_null
           - relationships:
-              # In dbt versions prior to 1.10, pass parameters directly rather than under `arguments`.
               to: ref('stg_products')
               field: product_id
-      - name: WAREHOUSE_ID
+      - name: warehouse_id
         description: "Identifier of the warehouse."
         tests:
           - not_null
           - relationships:
-              # Pass `to` and `field` directly for the relationships test.
               to: ref('stg_warehouses')
               field: warehouse_id
-      - name: MOVEMENT_DATE
+      - name: movement_date
         description: "Date of the inventory movement."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_of_type:
               column_type: date
-      - name: QUANTITY
+      - name: quantity
         description: "Number of units moved."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: -1000
               max_value: 1000
-      - name: MOVEMENT_TYPE
+      - name: movement_type
         description: "Type of inventory movement."
         tests:
           - accepted_values:
@@ -47,40 +45,39 @@ models:
   - name: stg_customer_orders
     description: "Staging model for customer orders data."
     columns:
-      - name: ORDER_ID
+      - name: order_id
         description: "Unique identifier for customer order."
         tests:
           - unique
           - not_null
-      - name: PRODUCT_ID
+      - name: product_id
         description: "Identifier of the product ordered."
         tests:
           - not_null
           - relationships:
-              # Pass test parameters directly (dbt <1.10).
               to: ref('stg_products')
               field: product_id
-      - name: WAREHOUSE_ID
+      - name: warehouse_id
         description: "Warehouse fulfilling the order."
         tests:
           - not_null
           - relationships:
               to: ref('stg_warehouses')
               field: warehouse_id
-      - name: ORDER_DATE
+      - name: order_date
         description: "Date of the customer order."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_of_type:
               column_type: date
-      - name: QUANTITY
+      - name: quantity
         description: "Number of units ordered."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 1
               max_value: 100
-      - name: SALES_CHANNEL
+      - name: sales_channel
         description: "Sales channel of the order."
         tests:
           - accepted_values:

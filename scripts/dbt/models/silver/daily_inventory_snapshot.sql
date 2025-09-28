@@ -29,7 +29,7 @@ SELECT
     wh.warehouse_name,
     inv.product_id,
     prd.product_name,
-    prd.category,
+    prd.category AS product_category,
     COALESCE(inv.qty_replenished, 0) AS qty_replenished,
     COALESCE(inv.qty_shipped, 0) AS qty_shipped,
     COALESCE(inv.qty_adjusted, 0) AS qty_adjusted,
