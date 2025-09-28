@@ -2,49 +2,46 @@
 
 WITH inventory AS (
     SELECT
-        movement_date,
-        warehouse_id,
-        product_id,
-        SUM(CASE WHEN movement_type = 'replenishment' THEN quantity ELSE 0 END) AS qty_replenished,
-        SUM(CASE WHEN movement_type = 'outbound' THEN ABS(quantity) ELSE 0 END) AS qty_shipped,
-        SUM(CASE WHEN movement_type = 'adjustment' THEN quantity ELSE 0 END) AS qty_adjusted
-    from {{ source('bronze', 'stg_inventory_movements') }}
-    GROUP BY movement_date, warehouse_id, product_id
+        MOVEMENT_DATE,
+        WAREHOUSE_ID,
+        PRODUCT_ID,
+        SUM(CASE WHEN MOVEMENT_TYPE = 'replenishment' THEN QUANTITY ELSE 0 END) AS qty_replenished,
+        SUM(CASE WHEN MOVEMENT_TYPE = 'outbound'      THEN ABS(QUANTITY) ELSE 0 END) AS qty_shipped,
+        SUM(CASE WHEN MOVEMENT_TYPE = 'adjustment'    THEN QUANTITY ELSE 0 END) AS qty_adjusted
+    FROM {{ ref('stg_inventory_movements') }}
+    GROUP BY MOVEMENT_DATE, WAREHOUSE_ID, PRODUCT_ID
 ),
 
 orders AS (
     SELECT
-        order_date AS movement_date,
-        warehouse_id,
-        product_id,
-        SUM(quantity) AS qty_ordered
-    FROM {{ source('bronze', 'stg_customer_orders') }}
-    GROUP BY order_date, warehouse_id, product_id
+        ORDER_DATE   AS movement_date,
+        WAREHOUSE_ID,
+        PRODUCT_ID,
+        SUM(QUANTITY) AS qty_ordered
+    FROM {{ ref('stg_customers_orders') }}
+    GROUP BY ORDER_DATE, WAREHOUSE_ID, PRODUCT_ID
 )
 
 SELECT
-    inv.movement_date,
-    inv.warehouse_id,
-    -- Use uppercase column names from staging models
-    wh.warehouse_name,
-    inv.product_id,
-    prd.product_name,
-    prd.category AS product_category,
-    COALESCE(inv.qty_replenished, 0) AS qty_replenished,
-    COALESCE(inv.qty_shipped, 0) AS qty_shipped,
-    COALESCE(inv.qty_adjusted, 0) AS qty_adjusted,
-    COALESCE(ord.qty_ordered, 0) AS qty_ordered,
-    (COALESCE(inv.qty_replenished, 0) - COALESCE(inv.qty_shipped, 0) + COALESCE(inv.qty_adjusted, 0)) AS net_inventory_change
+    inv.MOVEMENT_DATE                                             AS movement_date,
+    inv.WAREHOUSE_ID                                              AS warehouse_id,
+    wh.WAREHOUSE_NAME                                             AS warehouse_name,
+    inv.PRODUCT_ID                                                AS product_id,
+    prd.PRODUCT_NAME                                              AS product_name,
+    prd.CATEGORY                                                  AS product_category,
+    COALESCE(inv.qty_replenished, 0)                              AS qty_replenished,
+    COALESCE(inv.qty_shipped, 0)                                  AS qty_shipped,
+    COALESCE(inv.qty_adjusted, 0)                                 AS qty_adjusted,
+    COALESCE(ord.qty_ordered, 0)                                  AS qty_ordered,
+    COALESCE(inv.qty_replenished, 0)
+      - COALESCE(inv.qty_shipped, 0)
+      + COALESCE(inv.qty_adjusted, 0)                             AS net_inventory_change
 FROM inventory inv
 LEFT JOIN orders ord
-  ON inv.movement_date = ord.movement_date
-  AND inv.warehouse_id = ord.warehouse_id
-  AND inv.product_id = ord.product_id
--- Join to staging models for products and warehouses instead of referencing seeds
--- Using the stg_ models here ensures consistent column names and centralises
--- any transformations applied in the bronze layer. These staging models are
--- defined in scripts/dbt/models/bronze.
-LEFT JOIN {{ source('bronze', 'stg_products') }} prd
-  ON inv.product_id = prd.product_id
-LEFT JOIN {{ source('bronze', 'stg_warehouses') }} wh
-  ON inv.warehouse_id = wh.warehouse_id
+  ON  inv.MOVEMENT_DATE = ord.movement_date
+  AND inv.WAREHOUSE_ID  = ord.WAREHOUSE_ID
+  AND inv.PRODUCT_ID    = ord.PRODUCT_ID
+LEFT JOIN {{ ref('stg_products') }} prd
+  ON inv.PRODUCT_ID = prd.PRODUCT_ID
+LEFT JOIN {{ ref('stg_warehouses') }} wh
+  ON inv.WAREHOUSE_ID = wh.WAREHOUSE_ID
