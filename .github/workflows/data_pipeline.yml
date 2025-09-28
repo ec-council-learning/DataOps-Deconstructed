@@ -1,4 +1,4 @@
-name: Medallion ELT (Bronze→Silver→Gold)
+name: Medallion ELT
 
 on:
   workflow_call:
@@ -107,16 +107,16 @@ jobs:
       - name: Load Bronze (seed → tables)
         working-directory: scripts/dbt
         run: |
-          dbt seed --target ${{ needs.setup.outputs.dbt_env }}
-          dbt run --select path:models/bronze/ --target ${{ needs.setup.outputs.dbt_env }}
+          dbt seed
+          dbt run --select path:models/bronze/
 
       - name: Bronze basic checks (schema & rowcount smoke)
         working-directory: scripts/dbt
-        run: dbt test --select tag:bronze,tag:smoke+ --target ${{ needs.setup.outputs.dbt_env }}
+        run: dbt test --select tag:bronze,tag:smoke+
 
   # ===== T (Transform) → Silver =====
   silver_layer:
-    needs: bronze_layer
+    needs: [setup, bronze_layer]
     runs-on: ubuntu-latest
     outputs:
       passed: ${{ steps.silver_tests.outputs.passed }}
@@ -150,13 +150,13 @@ jobs:
 
       - name: Build Silver (cleaned/conformed)
         working-directory: scripts/dbt
-        run: dbt run --select path:models/silver/ --target ${{ needs.setup.outputs.dbt_env }}
+        run: dbt run --select path:models/silver/
 
       - name: Silver tests (constraints, nullability, referential)
         id: silver_tests
         working-directory: scripts/dbt
         run: |
-          dbt test --select path:models/silver/ --target ${{ needs.setup.outputs.dbt_env }} --output json > ../silver_test_results.json || true
+          dbt test --select path:models/silver/ --output json > ../silver_test_results.json || true
           PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../silver_test_results.json)
           TOTAL=$(jq '.results | length' ../silver_test_results.json)
           RATE=$(python - <<'PY'
@@ -179,7 +179,7 @@ jobs:
 
   # ===== T (Transform) → Gold =====
   gold_layer:
-    needs: silver_layer
+    needs: [setup, silver_layer]
     runs-on: ubuntu-latest
     outputs:
       passed: ${{ steps.gold_tests.outputs.passed }}
@@ -214,13 +214,13 @@ jobs:
 
       - name: Build Gold (business marts)
         working-directory: scripts/dbt
-        run: dbt run --select path:models/gold/ --target ${{ needs.setup.outputs.dbt_env }}
+        run: dbt run --select path:models/gold/
 
       - name: Gold tests (business rules)
         id: gold_tests
         working-directory: scripts/dbt
         run: |
-          dbt test --select path:models/gold/ --target ${{ needs.setup.outputs.dbt_env }} --output json > ../gold_test_results.json || true
+          dbt test --select path:models/gold/ --output json > ../gold_test_results.json || true
           PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../gold_test_results.json)
           TOTAL=$(jq '.results | length' ../gold_test_results.json)
           RATE=$(python - <<'PY'
@@ -236,7 +236,7 @@ jobs:
 
   # ===== ELT Health Notification (Slack) =====
   notify:
-    needs: [silver_layer, gold_layer]
+    needs: [setup, bronze_layer, silver_layer, gold_layer]
     runs-on: ubuntu-latest
     if: always()
     steps:
