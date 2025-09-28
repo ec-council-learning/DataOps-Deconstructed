@@ -15,18 +15,13 @@ seeds:
 
 models:
   logistics_demo:
-    # Bronze models read from raw sources and materialize as views.
-    bronze:
-      schema: "{{ generate_schema_name('bronze', this) }}"
-      alias: "{{ generate_alias_name(this.name, this) }}"
-      materialized: view
-    # Silver models transform raw data into clean, conformed tables.
-    silver:
-      schema: "{{ generate_schema_name('silver', this) }}"
-      alias: "{{ generate_alias_name(this.name, this) }}"
-      materialized: table
-    # Gold models build business marts from the conformed layer.
-    gold:
-      schema: "{{ generate_schema_name('gold', this) }}"
-      alias: "{{ generate_alias_name(this.name, this) }}"
-      materialized: table
+    schema: "{{ target.schema }}"
+      # Bronze models read from raw sources and materialize as views.
+      bronze:
+        materialized: view
+      # Silver models transform raw data into clean, conformed tables.
+      silver:
+        materialized: table
+      # Gold models build business marts from the conformed layer.
+      gold:
+        materialized: table
