@@ -90,12 +90,6 @@ jobs:
           echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA" >> "$GITHUB_OUTPUT"
 
-      - name: dbt deps
-        working-directory: scripts/dbt
-        env:
-          DBT_PROFILES_DIR: .
-        run: dbt deps
-
   # ===== E (Extract) + L (Load) → Bronze =====
   bronze_extract_load:
     needs: setup
@@ -118,6 +112,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r "${{ inputs.requirements_path }}"
+
+      - name: Install DBT dependencies
+        working-directory: scripts/dbt
+        run: dbt deps
 
       - name: Assert profiles.yml
         run: test -f scripts/dbt/profiles.yml

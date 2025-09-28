@@ -132,7 +132,7 @@ jobs:
   # ---------------- Security → ELT → Observability (strict) ----------------
   security:
     name: "🔒 Security SAST"
-    needs: [resolve_context, gate]
+    needs: [provision_feature, resolve_context, gate]
     if: ${{ needs.gate.outputs.proceed == 'true' && needs.gate.outputs.run_security == 'yes' }}
     permissions:
       contents: read
