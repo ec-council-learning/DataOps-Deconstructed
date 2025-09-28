@@ -122,23 +122,6 @@ jobs:
       - name: Assert profiles.yml
         run: test -f scripts/dbt/profiles.yml
 
-      # --- Your requested scripts ---
-      - name: Handle Feature Request Automation
-        if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'feature')
-        run: |
-          FEATURE_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" | grep 'Schema/Object Name' | cut -d':' -f2 | xargs | tr '-' '_')
-          echo "FEATURE_NAME=${FEATURE_NAME}" >> $GITHUB_ENV
-          echo "Creating schema/object: ${FEATURE_NAME}"
-          python scripts/python/create_schema.py "${{ github.event.issue.number }}"
-
-      - name: Handle Cleanup Automation
-        if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'cleanup')
-        run: |
-          OBJECT_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" | grep 'Schema/Object Name to Delete' | cut -d':' -f2 | xargs | tr '-' '_')
-          ISSUE_ID=${{ github.event.issue.number }}
-          echo "OBJECT_NAME=${OBJECT_NAME}" >> $GITHUB_ENV
-          python scripts/python/drop_schema.py "${OBJECT_NAME}" "${ISSUE_ID}"
-
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 

@@ -46,11 +46,11 @@ jobs:
           echo "has_feature=${HAS_FEATURE}"          >> "$GITHUB_OUTPUT"
           echo "has_cleanup=${HAS_CLEANUP}"          >> "$GITHUB_OUTPUT"
         env:
-          # issue labels (string match is fine)
+          # issue labels (string match)
           HAS_FEATURE: ${{ contains(toJson(github.event.issue), '"name":"feature"') }}
           HAS_CLEANUP: ${{ contains(toJson(github.event.issue), '"name":"cleanup"') }}
 
-          # proceed on issues with feature/cleanup, on push with #orchestrate, or workflow_dispatch
+          # proceed on issues with feature/cleanup, or push with #orchestrate, or manual dispatch
           PROCEED: ${{ (github.event_name == 'issues' && (contains(toJson(github.event.issue), '"name":"feature"') || contains(toJson(github.event.issue), '"name":"cleanup"')))
                       || (github.event_name == 'push'   && (contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message, '#orchestrate')))
                       || (github.event_name == 'workflow_dispatch') }}
@@ -100,26 +100,34 @@ jobs:
           fi
           echo "environment=$ENV" >> $GITHUB_OUTPUT
 
-  # ---------------- Optional per-issue provisioning ----------------
+  # ---------------- Provision (always runs; no-ops unless feature label) ----------------
   provision_feature:
     name: "Provision Feature Schema"
     needs: [resolve_context, gate]
-    if: needs.gate.outputs.has_feature == 'true'
     runs-on: ubuntu-latest
     outputs:
-      feature_schema: ${{ steps.get-name.outputs.feature_schema }}
+      feature_schema: ${{ steps.prov.outputs.feature_schema }}
+      created: ${{ steps.prov.outputs.created }}
     steps:
       - uses: actions/checkout@v4
-      - id: get-name
+      - id: prov
+        shell: bash
         run: |
-          FEATURE_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" \
-            | grep -i 'Schema/Object Name' | cut -d':' -f2 | xargs | tr '-' '_' )
-          echo "feature_schema=$FEATURE_NAME" >> "$GITHUB_OUTPUT"
-          echo "FEATURE_SCHEMA=$FEATURE_NAME" >> "$GITHUB_ENV"
-      - name: Create schema/object
-        run: |
-          echo "Creating schema/object: ${FEATURE_SCHEMA}"
-          python scripts/python/create_schema.py "${{ github.event.issue.number }}"
+          set -euo pipefail
+          CREATED=false
+          FEATURE_SCHEMA=""
+          if [[ "${{ github.event_name }}" == "issues" ]] && \
+             echo '${{ toJson(github.event.issue) }}' | grep -qi '"name":"feature"'; then
+            FEATURE_SCHEMA=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" \
+              | grep -i 'Schema/Object Name' | cut -d':' -f2 | xargs | tr '-' '_' )
+            echo "Creating schema/object: ${FEATURE_SCHEMA}"
+            python scripts/python/create_schema.py "${{ github.event.issue.number }}"
+            CREATED=true
+          else
+            echo "No feature provisioning needed for this run."
+          fi
+          echo "feature_schema=${FEATURE_SCHEMA}" >> "$GITHUB_OUTPUT"
+          echo "created=${CREATED}"               >> "$GITHUB_OUTPUT"
 
   # ---------------- Security → ELT → Observability (strict) ----------------
   security:
@@ -140,7 +148,7 @@ jobs:
 
   pipelines:
     name: "🛠️ Medallion ELT"
-    needs: [security, resolve_context, gate]
+    needs: [security, resolve_context, provision_feature, gate]   # ← ensure provision happens first
     if: ${{ needs.gate.outputs.proceed == 'true' && (
             needs.gate.outputs.run_security != 'yes' || needs.security.result == 'success'
           ) }}
@@ -150,6 +158,21 @@ jobs:
       extra_flags: ""
       requirements_path: "scripts/python/elt.req.txt"
     secrets: inherit # pragma: allowlist secret
+
+  # Cleanup immediately after the pipeline if it failed and provisioning created something
+  cleanup_after_pipeline:
+    name: "Cleanup provisioned objects (pipeline failure)"
+    needs: [pipelines, provision_feature, resolve_context, gate]
+    if: ${{ needs.pipelines.result == 'failure' && needs.provision_feature.outputs.created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Drop provisioned schema/object
+        env:
+          FEATURE_SCHEMA: ${{ needs.provision_feature.outputs.feature_schema }}
+        run: |
+          echo "Dropping provisioned schema/object: ${FEATURE_SCHEMA}"
+          python scripts/python/drop_schema.py "${FEATURE_SCHEMA}" "${{ github.run_id }}"
 
   observability:
     name: "📊 Observability Metrics"
@@ -172,7 +195,7 @@ jobs:
   # ---------------- Manual cleanup via Issue label ----------------
   manual_cleanup:
     name: "Manual Cleanup (Issue)"
-    needs: [resolve_context, provision_feature, security, pipelines, observability, gate]
+    needs: [resolve_context, gate]
     if: needs.gate.outputs.has_cleanup == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -186,29 +209,9 @@ jobs:
         run: |
           python scripts/python/drop_schema.py "${OBJECT_NAME}" "${{ github.event.issue.number }}"
 
-  # ---------------- Auto cleanup on failure/cancel ----------------
-  cleanup_on_failure:
-    name: "Auto Cleanup (on failure/cancel)"
-    needs: [resolve_context, provision_feature, security, pipelines, observability, gate]
-    if: >
-      always() &&
-      needs.gate.outputs.has_feature == 'true' &&
-      (needs.security.result == 'failure' ||
-       needs.pipelines.result == 'failure' ||
-       needs.observability.result == 'failure' || cancelled())
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Drop provisioned schema/object
-        env:
-          FEATURE_SCHEMA: ${{ needs.provision_feature.outputs.feature_schema }}
-        run: |
-          echo "Attempting rollback of schema/object: ${FEATURE_SCHEMA}"
-          python scripts/python/drop_schema.py "${FEATURE_SCHEMA}" "${{ github.run_id }}"
-
   # ---------------- Notify (always) ----------------
   notify:
-    needs: [gate, resolve_context, security, pipelines, observability]
+    needs: [gate, resolve_context, security, pipelines, observability, cleanup_after_pipeline]
     runs-on: ubuntu-latest
     if: always()
     steps:
