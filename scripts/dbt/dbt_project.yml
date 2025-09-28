@@ -9,6 +9,10 @@ seed-paths: ["seeds"]
 test-paths: ["tests"]
 macro-paths: ["macros"]
 
+seeds:
+  logistics_demo:
+    +schema: master_data
+
 models:
   logistics_demo:
     # Use the target's schema for all models to respect environment‑specific

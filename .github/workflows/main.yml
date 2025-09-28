@@ -46,13 +46,16 @@ jobs:
           echo "has_feature=${HAS_FEATURE}"          >> "$GITHUB_OUTPUT"
           echo "has_cleanup=${HAS_CLEANUP}"          >> "$GITHUB_OUTPUT"
         env:
+          # issue labels (string match)
           HAS_FEATURE: ${{ contains(toJson(github.event.issue), '"name":"feature"') }}
           HAS_CLEANUP: ${{ contains(toJson(github.event.issue), '"name":"cleanup"') }}
 
+          # proceed on issues with feature/cleanup, or push with #orchestrate, or manual dispatch
           PROCEED: ${{ (github.event_name == 'issues' && (contains(toJson(github.event.issue), '"name":"feature"') || contains(toJson(github.event.issue), '"name":"cleanup"')))
                       || (github.event_name == 'push'   && (contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message, '#orchestrate')))
                       || (github.event_name == 'workflow_dispatch') }}
 
+          # stage toggles (default yes; allow commit-msg overrides)
           RUN_SECURITY_SEL: ${{ (
               contains(toJson(github.event.commits), '#skip security') ||
               contains(github.event.head_commit.message, '#skip security')
@@ -97,10 +100,10 @@ jobs:
           fi
           echo "environment=$ENV" >> $GITHUB_OUTPUT
 
-  # ---------------- Provision (always; no-op unless Issue has 'feature') ----------------
+  # ---------------- Provision (always runs; no-ops unless feature label) ----------------
   provision_feature:
     name: "Provision Feature Schema"
-    needs: [resolve_context, gate, security]
+    needs: [resolve_context, gate]
     runs-on: ubuntu-latest
     outputs:
       feature_schema: ${{ steps.prov.outputs.feature_schema }}
@@ -145,7 +148,7 @@ jobs:
 
   pipelines:
     name: "🛠️ Medallion ELT"
-    needs: [security, resolve_context, provision_feature, gate]   # ensure provision runs first
+    needs: [security, resolve_context, provision_feature, gate]   # ← ensure provision happens first
     if: ${{ needs.gate.outputs.proceed == 'true' && (
             needs.gate.outputs.run_security != 'yes' || needs.security.result == 'success'
           ) }}
@@ -156,7 +159,7 @@ jobs:
       requirements_path: "scripts/python/elt.req.txt"
     secrets: inherit # pragma: allowlist secret
 
-  # Cleanup immediately if pipeline fails and a feature schema was created
+  # Cleanup immediately after the pipeline if it failed and provisioning created something
   cleanup_after_pipeline:
     name: "Cleanup provisioned objects (pipeline failure)"
     needs: [pipelines, provision_feature, resolve_context, gate]
