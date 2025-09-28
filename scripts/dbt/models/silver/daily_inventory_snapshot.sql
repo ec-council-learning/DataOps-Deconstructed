@@ -8,7 +8,7 @@ WITH inventory AS (
         SUM(CASE WHEN movement_type = 'replenishment' THEN quantity ELSE 0 END) AS qty_replenished,
         SUM(CASE WHEN movement_type = 'outbound' THEN ABS(quantity) ELSE 0 END) AS qty_shipped,
         SUM(CASE WHEN movement_type = 'adjustment' THEN quantity ELSE 0 END) AS qty_adjusted
-    FROM {{ ref('stg_inventory_movements') }}
+    from {{ source('bronze', 'stg_inventory_movements') }}
     GROUP BY movement_date, warehouse_id, product_id
 ),
 
@@ -18,7 +18,7 @@ orders AS (
         warehouse_id,
         product_id,
         SUM(quantity) AS qty_ordered
-    FROM {{ ref('stg_customer_orders') }}
+    FROM {{ source('bronze', 'stg_customer_orders') }}
     GROUP BY order_date, warehouse_id, product_id
 )
 
@@ -44,7 +44,7 @@ LEFT JOIN orders ord
 -- Using the stg_ models here ensures consistent column names and centralises
 -- any transformations applied in the bronze layer. These staging models are
 -- defined in scripts/dbt/models/bronze.
-LEFT JOIN {{ ref('stg_products') }} prd
+LEFT JOIN {{ source('bronze', 'stg_products') }} prd
   ON inv.product_id = prd.product_id
-LEFT JOIN {{ ref('stg_warehouses') }} wh
+LEFT JOIN {{ source('bronze', 'stg_warehouses') }} wh
   ON inv.warehouse_id = wh.warehouse_id
