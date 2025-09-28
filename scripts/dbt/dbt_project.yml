@@ -11,23 +11,22 @@ macro-paths: ["macros"]
 
 seeds:
   logistics_demo:
-    +schema: master_data
+    schema: master_data
 
 models:
   logistics_demo:
-    # Use the target's schema for all models to respect environment‑specific
-    # schemas set in profiles.yml.  In CI the orchestrator sets
-    # DBT_TARGET_SCHEMA to `ci_<run_id>`; in dev/prod it defaults to `dev` or `prod`.
-    +schema: "{{ target.schema }}"
-
     # Bronze models read from raw sources and materialize as views.
     bronze:
-      +materialized: view
-
+      schema: "{{ generate_schema_name('bronze', this) }}"
+      alias: "{{ generate_alias_name(this.name, this) }}"
+      materialized: view
     # Silver models transform raw data into clean, conformed tables.
     silver:
-      +materialized: table
-
+      schema: "{{ generate_schema_name('silver', this) }}"
+      alias: "{{ generate_alias_name(this.name, this) }}"
+      materialized: table
     # Gold models build business marts from the conformed layer.
     gold:
-      +materialized: table
+      schema: "{{ generate_schema_name('gold', this) }}"
+      alias: "{{ generate_alias_name(this.name, this) }}"
+      materialized: table
