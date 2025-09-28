@@ -124,7 +124,7 @@ jobs:
   # ---------------- Security → ELT → Observability (strict) ----------------
   security:
     name: "🔒 Security SAST"
-    needs: [resolve_context, provision_feature, gate]
+    needs: [resolve_context, gate]
     if: ${{ needs.gate.outputs.proceed == 'true' && needs.gate.outputs.run_security == 'yes' }}
     permissions:
       contents: read
@@ -140,7 +140,7 @@ jobs:
 
   pipelines:
     name: "🛠️ Medallion ELT"
-    needs: [security, resolve_context, provision_feature, gate]
+    needs: [security, resolve_context, gate]
     if: ${{ needs.gate.outputs.proceed == 'true' && (
             needs.gate.outputs.run_security != 'yes' || needs.security.result == 'success'
           ) }}
@@ -153,7 +153,7 @@ jobs:
 
   observability:
     name: "📊 Observability Metrics"
-    needs: [pipelines, resolve_context, provision_feature, gate]
+    needs: [pipelines, resolve_context, gate]
     if: ${{ needs.gate.outputs.proceed == 'true' &&
            needs.gate.outputs.run_observability == 'yes' &&
            needs.pipelines.result == 'success' }}
@@ -172,7 +172,7 @@ jobs:
   # ---------------- Manual cleanup via Issue label ----------------
   manual_cleanup:
     name: "Manual Cleanup (Issue)"
-    needs: [resolve_context, gate]
+    needs: [resolve_context, provision_feature, security, pipelines, observability, gate]
     if: needs.gate.outputs.has_cleanup == 'true'
     runs-on: ubuntu-latest
     steps:
