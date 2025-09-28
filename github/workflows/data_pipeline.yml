@@ -28,13 +28,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Snowflake / dbt
   SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
   SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
   SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
   SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
   SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-  # Slack (optional)
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
   SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
@@ -44,8 +42,6 @@ jobs:
     outputs:
       dbt_env: ${{ steps.set-env.outputs.DBT_ENVIRONMENT }}
       dbt_schema: ${{ steps.set-env.outputs.DBT_TARGET_SCHEMA }}
-    env:
-      DBT_PROFILES_DIR: scripts/dbt
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,23 +67,33 @@ jobs:
 
       - name: Determine dbt target (env/schema)
         id: set-env
+        shell: bash
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "DBT_TARGET_SCHEMA=prod" >> $GITHUB_ENV
-            echo "DBT_ENVIRONMENT=prod" >> $GITHUB_ENV
-          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            echo "DBT_TARGET_SCHEMA=dev" >> $GITHUB_ENV
-            echo "DBT_ENVIRONMENT=dev" >> $GITHUB_ENV
+          REF="${{ github.ref }}"
+          if [[ "$REF" == "refs/heads/main" ]]; then
+            DBT_ENVIRONMENT=prod
+            DBT_TARGET_SCHEMA=prod
+          elif [[ "$REF" == "refs/heads/develop" ]]; then
+            DBT_ENVIRONMENT=dev
+            DBT_TARGET_SCHEMA=dev
           else
-            ISSUE_ID=${{ github.run_id }} # isolated CI schema by run
-            echo "DBT_TARGET_SCHEMA=ci_${ISSUE_ID}" >> $GITHUB_ENV
-            echo "DBT_ENVIRONMENT=ci_cd" >> $GITHUB_ENV
+            ISSUE_ID=${{ github.run_id }}
+            DBT_ENVIRONMENT=ci_cd
+            DBT_TARGET_SCHEMA="ci_${ISSUE_ID}"
           fi
-          echo "DBT_TARGET_SCHEMA=${DBT_TARGET_SCHEMA}" >> $GITHUB_OUTPUT
-          echo "DBT_ENVIRONMENT=${DBT_ENVIRONMENT}" >> $GITHUB_OUTPUT
+
+          # export for downstream steps
+          echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT" >> "$GITHUB_ENV"
+          echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA" >> "$GITHUB_ENV"
+
+          # expose as job outputs (use local vars; not $GITHUB_ENV)
+          echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA" >> "$GITHUB_OUTPUT"
 
       - name: dbt deps
         working-directory: scripts/dbt
+        env:
+          DBT_PROFILES_DIR: .
         run: dbt deps
 
   # ===== E (Extract) + L (Load) → Bronze =====
@@ -97,7 +103,7 @@ jobs:
     env:
       DBT_ENVIRONMENT: ${{ needs.setup.outputs.dbt_env }}
       DBT_TARGET_SCHEMA: ${{ needs.setup.outputs.dbt_schema }}
-      DBT_PROFILES_DIR: scripts/dbt
+      DBT_PROFILES_DIR: .                 # because we run from scripts/dbt
     steps:
       - uses: actions/checkout@v4
 
@@ -113,16 +119,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r "${{ inputs.requirements_path }}"
 
-      - name: Ensure profiles.yml exists
+      - name: Assert profiles.yml
         run: test -f scripts/dbt/profiles.yml
 
-      # Option A (demo): use seeds as extract artifacts into Bronze
-      - name: Extract from sources (demo via dynamic seeds)
+      # --- Your requested scripts ---
+      - name: Handle Feature Request Automation
+        if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'feature')
         run: |
-          # If you have a real extractor, swap this for: python scripts/python/extract_sources.py
-          python scripts/python/create_seed.py
+          FEATURE_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" | grep 'Schema/Object Name' | cut -d':' -f2 | xargs | tr '-' '_')
+          echo "FEATURE_NAME=${FEATURE_NAME}" >> $GITHUB_ENV
+          echo "Creating schema/object: ${FEATURE_NAME}"
+          python scripts/python/create_schema.py "${{ github.event.issue.number }}"
 
-      - name: Load Bronze (seed/external→tables)
+      - name: Handle Cleanup Automation
+        if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'cleanup')
+        run: |
+          OBJECT_NAME=$(jq -r '.issue.body' "$GITHUB_EVENT_PATH" | grep 'Schema/Object Name to Delete' | cut -d':' -f2 | xargs | tr '-' '_')
+          ISSUE_ID=${{ github.event.issue.number }}
+          echo "OBJECT_NAME=${OBJECT_NAME}" >> $GITHUB_ENV
+          python scripts/python/drop_schema.py "${OBJECT_NAME}" "${ISSUE_ID}"
+
+      - name: Generate Dynamic CSV Seed Files
+        run: python scripts/python/create_seed.py
+
+      - name: Load Bronze (seed → tables)
         working-directory: scripts/dbt
         run: |
           dbt seed
@@ -141,7 +161,7 @@ jobs:
       total: ${{ steps.silver_tests.outputs.total }}
       rate: ${{ steps.silver_tests.outputs.rate }}
     env:
-      DBT_PROFILES_DIR: scripts/dbt
+      DBT_PROFILES_DIR: .
     steps:
       - uses: actions/checkout@v4
 
@@ -195,7 +215,7 @@ jobs:
       total: ${{ steps.gold_tests.outputs.total }}
       rate: ${{ steps.gold_tests.outputs.rate }}
     env:
-      DBT_PROFILES_DIR: scripts/dbt
+      DBT_PROFILES_DIR: .
     steps:
       - uses: actions/checkout@v4
 
