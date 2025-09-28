@@ -20,8 +20,13 @@ if len(sys.argv) != 3:
 object_name = sys.argv[1]
 github_issue_id = sys.argv[2]
 
-# Construct schema name based on GitHub Issue ID
-schema_name = f"feature_{github_issue_id}"
+# Construct the dynamic schema name to drop.  In our DataOps pipeline,
+# dbt’s dynamic naming macro appends `_issue_<github_issue_id>` to a
+# custom schema (e.g. `bronze_issue_123`).  To align with that convention
+# and drop the correct schema, build the name from the provided
+# object_name and GitHub Issue ID.  For example, `bronze` + `_issue_42`
+# becomes `bronze_issue_42`.
+schema_name = f"{object_name}_issue_{github_issue_id}"
 
 
 def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:

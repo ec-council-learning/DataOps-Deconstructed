@@ -149,13 +149,18 @@ def main():
 
     # 4) dbt run_results (optional)
     tests_total = tests_passed = 0
-    rr = glob.glob("scripts/dbt/target/run_results.json")
+    # Look for run_results.json in the default dbt target directory.  In our
+    # project, the target directory is created at the project root (not
+    # under scripts/dbt).  Using glob allows the file to be absent without
+    # failing.  When multiple files exist, pick the first match.
+    rr = glob.glob("target/run_results.json")
     if rr:
-        data = json.load(open(rr[0]))
-        for r in data.get("results", []):
-            if r.get("unique_id", "").startswith("test."):
+        with open(rr[0]) as fh:
+            data = json.load(fh)
+        for result in data.get("results", []):
+            if result.get("unique_id", "").startswith("test."):
                 tests_total += 1
-                tests_passed += int(r.get("status") == "pass")
+                tests_passed += int(result.get("status") == "pass")
     pass_rate = round(100 * (tests_passed / max(1, tests_total)), 1)
 
     out = {

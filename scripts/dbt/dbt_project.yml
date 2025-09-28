@@ -11,12 +11,19 @@ macro-paths: ["macros"]
 
 models:
   logistics_demo:
+    # Use the target's schema for all models to respect environment‑specific
+    # schemas set in profiles.yml.  In CI the orchestrator sets
+    # DBT_TARGET_SCHEMA to `ci_<run_id>`; in dev/prod it defaults to `dev` or `prod`.
+    +schema: "{{ target.schema }}"
+
+    # Bronze models read from raw sources and materialize as views.
     bronze:
-      +schema: bronze
       +materialized: view
+
+    # Silver models transform raw data into clean, conformed tables.
     silver:
-      +schema: silver
       +materialized: table
+
+    # Gold models build business marts from the conformed layer.
     gold:
-      +schema: gold
       +materialized: table

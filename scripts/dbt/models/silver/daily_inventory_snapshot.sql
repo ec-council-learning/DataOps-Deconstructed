@@ -1,5 +1,4 @@
--- scripts/dbt/models/silver/daily_inventory_snapshot.sql
-
+-- daily snapshot combining staged inventory movements and customer orders
 WITH inventory AS (
     SELECT
         movement_date,
@@ -39,7 +38,5 @@ LEFT JOIN orders ord
   ON inv.movement_date = ord.movement_date
   AND inv.warehouse_id = ord.warehouse_id
   AND inv.product_id = ord.product_id
-LEFT JOIN {{ ref('products') }} prd
-  ON inv.product_id = prd.product_id
-LEFT JOIN {{ ref('warehouses') }} wh
-  ON inv.warehouse_id = wh.warehouse_id
+LEFT JOIN {{ ref('products') }}    prd ON inv.product_id   = prd.product_id
+LEFT JOIN {{ ref('warehouses') }} wh ON inv.warehouse_id = wh.warehouse_id

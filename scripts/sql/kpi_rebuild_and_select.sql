@@ -1,3 +1,15 @@
+--
+-- This script is used by the compute_metrics Python script (and the
+-- dashboard rebuild) to construct and query a KPI table in Snowflake.
+-- The placeholders {{GOLD_SCHEMA}}, {{SILVER_SCHEMA}} and
+-- {{MASTER_SCHEMA}} will be replaced at runtime by the invoking script
+-- to point at the correct target schemas (e.g. a dynamic `ci_<run_id>`
+-- schema for CI runs).  The KPI table is rebuilt from the
+-- `DAILY_INVENTORY_SNAPSHOT` table in the silver schema and joined with
+-- master data seeds (`warehouses` and `products`) which are loaded via
+-- dbt seeds.  Once the KPI table is refreshed, the final SELECT
+-- returns a preview of the latest rows (10 by default).
+
 -- 1) Ensure KPI schema exists
 CREATE SCHEMA IF NOT EXISTS LOGISTICS_DEMO.{{GOLD_SCHEMA}};
 

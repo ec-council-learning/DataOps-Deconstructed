@@ -8,7 +8,9 @@ logistics_demo:
       role: "{{ env_var('SNOWFLAKE_ROLE') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
       database: LOGISTICS_DEMO
-      schema: prod
+      # Use dynamic schema name for production. If DBT_TARGET_SCHEMA is not set,
+      # fall back to 'prod'.
+      schema: "{{ env_var('DBT_TARGET_SCHEMA', 'prod') }}"
       threads: 4
 
     dev:
@@ -19,7 +21,8 @@ logistics_demo:
       role: "{{ env_var('SNOWFLAKE_ROLE') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
       database: LOGISTICS_DEMO
-      schema: dev
+      # Use dynamic schema name for development. Default to 'dev' if not set.
+      schema: "{{ env_var('DBT_TARGET_SCHEMA', 'dev') }}"
       threads: 4
 
     ci_cd:
@@ -30,7 +33,9 @@ logistics_demo:
       role: "{{ env_var('SNOWFLAKE_ROLE') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
       database: LOGISTICS_DEMO
+      # CI/CD uses the dynamic DBT_TARGET_SCHEMA set by the orchestrator (e.g., ci_<run_id>)
       schema: "{{ env_var('DBT_TARGET_SCHEMA', 'default') }}"
       threads: 4
 
+  # DBT_ENVIRONMENT should be set to 'prod', 'dev' or 'ci_cd' to select the target above.
   target: "{{ env_var('DBT_ENVIRONMENT', 'ci_cd') }}"

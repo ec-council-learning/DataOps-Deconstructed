@@ -1,4 +1,10 @@
--- Formats with Python .format(gold=..., silver=...)
+--
+-- This metrics query is executed by the Python compute_metrics script.
+-- It uses Python string formatting to substitute the gold and silver
+-- schema names at runtime (e.g. gold="prod", silver="silver").  The
+-- placeholders {gold} and {silver} are replaced by the calling
+-- script to target the correct schema during execution.
+--
 with d as (
   select
     report_date,

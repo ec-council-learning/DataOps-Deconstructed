@@ -1,10 +1,10 @@
--- scripts/dbt/models/bronze/stg_inventory_movements.sql
-
+-- staging for inventory_movements seed
+-- use ref('inventory_movements') because the data is loaded from a seed
 SELECT
-    MOVEMENT_ID,
-    PRODUCT_ID,
-    WAREHOUSE_ID,
-    MOVEMENT_DATE,
-    QUANTITY,
-    MOVEMENT_TYPE
+    movement_id,
+    product_id,
+    warehouse_id,
+    movement_date,
+    quantity,
+    movement_type
 FROM {{ ref('inventory_movements') }}
