@@ -7,7 +7,7 @@ with raw as (
     movement_date,
     quantity,
     movement_type
-  from {{ source('bronze', 'inventory_movements') }}
+  from {{ ref('inventory_movements') }}
 )
 
 select

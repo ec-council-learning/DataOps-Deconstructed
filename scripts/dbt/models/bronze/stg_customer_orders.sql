@@ -7,7 +7,7 @@ with raw as (
     order_date,
     quantity,
     sales_channel
-  from {{ source('bronze', 'customer_orders') }}
+  from {{ ref('customer_orders') }}
 )
 
 select

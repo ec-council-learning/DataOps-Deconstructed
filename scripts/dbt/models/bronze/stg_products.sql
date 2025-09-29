@@ -7,7 +7,7 @@ with raw as (
     unit_cost,
     weight_kg,
     dimensions_cm
-  from {{ source('bronze', 'products') }}
+  from {{ ref('products') }}
 )
 
 select

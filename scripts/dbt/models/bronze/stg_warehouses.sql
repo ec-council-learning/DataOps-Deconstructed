@@ -6,7 +6,7 @@ with raw as (
     location,
     capacity_units,
     manager_name
-  from {{ source('bronze', 'warehouses') }}
+  from {{ ref('warehouses') }}
 )
 
 select
