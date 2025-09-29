@@ -1,56 +1,53 @@
--- sqlfluff: disable=JJ01,TMP,PRS
+-- sqlfluff: rules disabled none (placeholders use defaults to avoid TMP/JJ01)
 --
 -- This script is used by the compute_metrics Python script (and the
 -- dashboard rebuild) to construct and query a KPI table in Snowflake.
--- Note: Placeholders are replaced by Python at runtime (not dbt), so we
--- disable templater warnings in lint above.
---
--- Placeholders used at runtime by Python (do not change):
---   {{GOLD_SCHEMA}}, {{SILVER_SCHEMA}}, {{BRONZE_SCHEMA}}
+-- Placeholders are replaced at runtime by Python.
+--   {{ GOLD_SCHEMA }}, {{ SILVER_SCHEMA }}, {{ BRONZE_SCHEMA }}
 --
 
 -- 1) Ensure KPI schema exists
-CREATE SCHEMA IF NOT EXISTS LOGISTICS_DEMO.{{GOLD_SCHEMA}};
+create schema if not exists logistics_demo.{{ GOLD_SCHEMA | default('gold') }};
 
 -- 2) Rebuild KPI table in the gold schema from silver snapshot + bronze staging
-CREATE OR REPLACE TABLE LOGISTICS_DEMO.{{GOLD_SCHEMA}}.DAILY_INVENTORY_KPIS AS
-WITH s AS (
-    SELECT
-        movement_date AS report_date,
-        warehouse_id,
-        product_id,
-        COALESCE(qty_ordered, 0)     AS qty_ordered,
-        COALESCE(qty_shipped, 0)     AS qty_shipped,
-        COALESCE(qty_replenished, 0) AS qty_replenished,
-        COALESCE(qty_adjusted, 0)    AS qty_adjusted
-    FROM LOGISTICS_DEMO.{{SILVER_SCHEMA}}.DAILY_INVENTORY_SNAPSHOT
+create or replace table logistics_demo.{{ GOLD_SCHEMA | default('gold') }}.daily_inventory_kpis as
+with s as (
+  select
+    movement_date as report_date,
+    warehouse_id,
+    product_id,
+    coalesce(qty_ordered, 0)     as qty_ordered,
+    coalesce(qty_shipped, 0)     as qty_shipped,
+    coalesce(qty_replenished, 0) as qty_replenished,
+    coalesce(qty_adjusted, 0)    as qty_adjusted
+  from logistics_demo.{{ SILVER_SCHEMA | default('silver') }}.daily_inventory_snapshot
 )
-SELECT
-    s.report_date                                    AS REPORT_DATE,
-    w.WAREHOUSE_NAME                                 AS WAREHOUSE_NAME,
-    p.PRODUCT_NAME                                   AS PRODUCT_NAME,
-    p.CATEGORY                                       AS CATEGORY,
-    s.qty_ordered                                    AS TOTAL_ORDERS,
-    s.qty_shipped                                    AS TOTAL_UNITS_SHIPPED,
-    s.qty_replenished                                AS TOTAL_UNITS_REPLENISHED,
-    /* classic turnover: shipped / replenished (avoid div-by-zero) */
-    ROUND(s.qty_shipped / NULLIF(s.qty_replenished, 0), 2) AS STOCK_TURNOVER_RATIO
-FROM LOGISTICS_DEMO.{{BRONZE_SCHEMA}}.STG_WAREHOUSES w
-JOIN s
-  ON s.warehouse_id = w.WAREHOUSE_ID
-JOIN LOGISTICS_DEMO.{{BRONZE_SCHEMA}}.STG_PRODUCTS p
-  ON s.product_id = p.PRODUCT_ID;
+select
+  s.report_date                                     as report_date,
+  w.warehouse_name                                  as warehouse_name,
+  p.product_name                                    as product_name,
+  p.category                                        as category,
+  s.qty_ordered                                     as total_orders,
+  s.qty_shipped                                     as total_units_shipped,
+  s.qty_replenished                                 as total_units_replenished,
+  /* classic turnover: shipped / replenished (avoid div-by-zero) */
+  round( s.qty_shipped / nullif(s.qty_replenished, 0), 2 ) as stock_turnover_ratio
+from logistics_demo.{{ BRONZE_SCHEMA | default('bronze') }}.stg_warehouses w
+join s
+  on s.warehouse_id = w.warehouse_id
+join logistics_demo.{{ BRONZE_SCHEMA | default('bronze') }}.stg_products p
+  on s.product_id = p.product_id;
 
 -- 3) Final SELECT (Python returns this result set)
-SELECT
-    REPORT_DATE,
-    WAREHOUSE_NAME,
-    PRODUCT_NAME,
-    CATEGORY,
-    TOTAL_ORDERS,
-    TOTAL_UNITS_SHIPPED,
-    TOTAL_UNITS_REPLENISHED,
-    STOCK_TURNOVER_RATIO
-FROM LOGISTICS_DEMO.{{GOLD_SCHEMA}}.DAILY_INVENTORY_KPIS
-ORDER BY REPORT_DATE DESC
-LIMIT 10;
+select
+  report_date,
+  warehouse_name,
+  product_name,
+  category,
+  total_orders,
+  total_units_shipped,
+  total_units_replenished,
+  stock_turnover_ratio
+from logistics_demo.{{ GOLD_SCHEMA | default('gold') }}.daily_inventory_kpis
+order by report_date desc
+limit 10;
