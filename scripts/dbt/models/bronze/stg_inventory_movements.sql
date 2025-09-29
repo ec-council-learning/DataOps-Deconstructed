@@ -11,10 +11,10 @@ with raw as (
 )
 
 select
-  movement_id   as MOVEMENT_ID,
-  product_id    as PRODUCT_ID,
-  warehouse_id  as WAREHOUSE_ID,
-  cast(movement_date as date) as MOVEMENT_DATE,
-  cast(quantity as int)       as QUANTITY,
-  movement_type as MOVEMENT_TYPE
+  movement_id,
+  product_id,
+  warehouse_id,
+  cast(movement_date as date) as movement_date,
+  cast(quantity as int)       as quantity,
+  movement_type
 from raw

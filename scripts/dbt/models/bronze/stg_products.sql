@@ -11,10 +11,10 @@ with raw as (
 )
 
 select
-  product_id    as PRODUCT_ID,
-  product_name  as PRODUCT_NAME,
-  category      as CATEGORY,
-  unit_cost     as UNIT_COST,
-  weight_kg     as WEIGHT_KG,
-  dimensions_cm as DIMENSIONS_CM
+  product_id,
+  product_name,
+  category,
+  unit_cost,
+  weight_kg,
+  dimensions_cm
 from raw

@@ -43,9 +43,11 @@ SEED_DIR.mkdir(parents=True, exist_ok=True)
 NUM_ROWS = int(os.getenv("DBT_SEED_ROWS", "9999"))
 
 # Optional deterministic seed for reproducibility (CI/debug)
-RANDOM_SEED: Optional[int] = None
+RANDOM_SEED: int | None = None
 try:
-    RANDOM_SEED = int(os.getenv("SEED_RANDOM_SEED")) if os.getenv("SEED_RANDOM_SEED") else None
+    RANDOM_SEED = (
+        int(os.getenv("SEED_RANDOM_SEED")) if os.getenv("SEED_RANDOM_SEED") else None
+    )
 except (TypeError, ValueError):
     RANDOM_SEED = None
 
@@ -59,6 +61,7 @@ if RANDOM_SEED is not None:
 # ------------------------------------------------------------------------------
 # Generators
 # ------------------------------------------------------------------------------
+
 
 def generate_products() -> None:
     """Generate a products.csv file with synthetic product data."""
@@ -98,6 +101,7 @@ def generate_products() -> None:
                 ]
             )
 
+
 def generate_warehouses() -> None:
     """Generate a warehouses.csv file with warehouse metadata."""
     out_path = SEED_DIR / "warehouses.csv"
@@ -118,7 +122,10 @@ def generate_warehouses() -> None:
             location = f"{fake.city()}, {fake.country_code()}"
             capacity_units = random.randint(5_000, 100_000)
             manager_name = fake.name()
-            writer.writerow([warehouse_id, warehouse_name, location, capacity_units, manager_name])
+            writer.writerow(
+                [warehouse_id, warehouse_name, location, capacity_units, manager_name]
+            )
+
 
 def generate_inventory_movements() -> None:
     """Generate an inventory_movements.csv file with stock movement events."""
@@ -156,6 +163,7 @@ def generate_inventory_movements() -> None:
                 ]
             )
 
+
 def generate_customer_orders() -> None:
     """Generate a customer_orders.csv file with order data."""
     sales_channels = ["online", "retail", "wholesale"]
@@ -192,9 +200,11 @@ def generate_customer_orders() -> None:
                 ]
             )
 
+
 # ------------------------------------------------------------------------------
 # Entrypoint
 # ------------------------------------------------------------------------------
+
 
 def main() -> None:
     print(f"[create_seed] Writing seeds to: {SEED_DIR}")
@@ -215,6 +225,7 @@ def main() -> None:
     print("Generating customer_orders.csv...")
     generate_customer_orders()
     print("customer_orders.csv generated successfully.")
+
 
 if __name__ == "__main__":
     main()

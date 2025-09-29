@@ -10,9 +10,9 @@ with raw as (
 )
 
 select
-  warehouse_id   as WAREHOUSE_ID,
-  warehouse_name as WAREHOUSE_NAME,
-  location       as LOCATION,
-  capacity_units as CAPACITY_UNITS,
-  manager_name   as MANAGER_NAME
+  warehouse_id,
+  warehouse_name,
+  location,
+  capacity_units,
+  manager_name
 from raw
