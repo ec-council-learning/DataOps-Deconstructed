@@ -22,20 +22,19 @@ with s as (
 
 select
   s.report_date,
-  w.warehouse_name,
-  p.product_name,
-  p.category,
+  logistics_demo.__bronze_schema__.stg_warehouses.warehouse_name,
+  logistics_demo.__bronze_schema__.stg_products.product_name,
+  logistics_demo.__bronze_schema__.stg_products.category,
   s.qty_ordered,
   s.qty_shipped,
   s.qty_replenished,
   -- classic turnover: shipped / replenished (avoid div-by-zero)
   round( s.qty_shipped / nullif(s.qty_replenished, 0), 2 ) as stock_turnover_ratio
-from logistics_demo.__bronze_schema__.stg_warehouses w
+from logistics_demo.__bronze_schema__.stg_warehouses
 join s
   on s.warehouse_id = logistics_demo.__bronze_schema__.stg_warehouses.warehouse_id
-join logistics_demo.__bronze_schema__.stg_products p
-  on s.product_id = logistics_demo.__bronze_schema__.stg_products.product_id
-  ;
+join logistics_demo.__bronze_schema__.stg_products
+  on s.product_id = logistics_demo.__bronze_schema__.stg_products.product_id;
 
 -- 3) Final SELECT (Python returns this result set)
 select
