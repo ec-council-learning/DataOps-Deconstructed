@@ -92,7 +92,6 @@ jobs:
       - name: Generate Dynamic CSV Seed Files
         run: |
           python scripts/python/create_seed.py
-          dbt seed
 
       # Build only the monitoring area (and artifacts if you chose to include that dependency)
       - name: Build monitoring models
