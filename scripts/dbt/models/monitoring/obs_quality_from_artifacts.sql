@@ -9,6 +9,7 @@ with tests as (
   from {{ ref('artifact_tests') }}     -- provided by dbt_artifacts
   group by 1
 )
+
 select
   invocation_id,
   run_started_at,
