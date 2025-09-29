@@ -1,14 +1,13 @@
+-- sqlfluff: disable=JJ01,TMP,PRS
 --
 -- This script is used by the compute_metrics Python script (and the
 -- dashboard rebuild) to construct and query a KPI table in Snowflake.
--- The placeholders {{GOLD_SCHEMA}}, {{SILVER_SCHEMA}} and
--- {{BRONZE_SCHEMA}} will be replaced at runtime by the invoking script
--- to point at the correct target schemas (e.g. a dynamic `ci_<run_id>`
--- schema for CI runs).  The KPI table is rebuilt from the
--- `DAILY_INVENTORY_SNAPSHOT` table in the silver schema and joined with
--- staging/master data (`STG_WAREHOUSES` and `STG_PRODUCTS`) which are
--- materialized in the bronze layer via dbt.  Once refreshed, the final
--- SELECT returns a preview of the latest rows (10 by default).
+-- Note: Placeholders are replaced by Python at runtime (not dbt), so we
+-- disable templater warnings in lint above.
+--
+-- Placeholders used at runtime by Python (do not change):
+--   {{GOLD_SCHEMA}}, {{SILVER_SCHEMA}}, {{BRONZE_SCHEMA}}
+--
 
 -- 1) Ensure KPI schema exists
 CREATE SCHEMA IF NOT EXISTS LOGISTICS_DEMO.{{GOLD_SCHEMA}};
@@ -34,15 +33,15 @@ SELECT
     s.qty_ordered                                    AS TOTAL_ORDERS,
     s.qty_shipped                                    AS TOTAL_UNITS_SHIPPED,
     s.qty_replenished                                AS TOTAL_UNITS_REPLENISHED,
-    /* classic stock-turnover: shipments / replenishments (avoid div-by-zero) */
-    ROUND( s.qty_shipped / NULLIF(s.qty_replenished, 0), 2 ) AS STOCK_TURNOVER_RATIO
+    /* classic turnover: shipped / replenished (avoid div-by-zero) */
+    ROUND(s.qty_shipped / NULLIF(s.qty_replenished, 0), 2) AS STOCK_TURNOVER_RATIO
 FROM LOGISTICS_DEMO.{{BRONZE_SCHEMA}}.STG_WAREHOUSES w
 JOIN s
   ON s.warehouse_id = w.WAREHOUSE_ID
 JOIN LOGISTICS_DEMO.{{BRONZE_SCHEMA}}.STG_PRODUCTS p
   ON s.product_id = p.PRODUCT_ID;
 
--- 3) Final SELECT (this is the result set the Python returns)
+-- 3) Final SELECT (Python returns this result set)
 SELECT
     REPORT_DATE,
     WAREHOUSE_NAME,
