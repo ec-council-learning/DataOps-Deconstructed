@@ -7,7 +7,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: "Target environment (dev/prod/ci)"
+        description: "Target environment (dev/prod/ci_cd)"
         required: false
         type: string
       extra_flags:
@@ -93,14 +93,17 @@ jobs:
         run: |
           python scripts/python/create_seed.py
 
-      # Build only the monitoring area (and artifacts if you chose to include that dependency)
+      # Build only the observability models using the new tags.  The `observability` tag
+      # selects the monitoring layer defined in schema.yml.  The `+` suffix ensures
+      # upstream dependencies (e.g., silver/gold) are built as needed.  Extra flags
+      # from the caller are appended verbatim.
       - name: Build monitoring models
         working-directory: scripts/dbt
         shell: bash
         run: |
           set -euo pipefail
           test -f profiles.yml
-          dbt build --select monitoring+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}"
+          dbt build --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}"
 
       # Pull current gh-pages content so we can publish a single, cumulative site
       - name: Fetch current GitHub Pages (gh-pages)
@@ -230,7 +233,7 @@ jobs:
           - Silver snapshot lag: **{fresh}**
 
           ## Daily Preview (latest 10)
-          """  # noqa: E501
+          """
 
           # add preview table
           preview = data.get("preview", [])
@@ -300,7 +303,7 @@ jobs:
               "blocks": [
                 { "type": "header", "text": { "type": "plain_text", "text": "✅ Observability (dbt monitoring) published" } },
                 { "type": "section", "fields": [
-                  { "type":"mrkdwn", "text":"*Run:* <${{ env.RUN_URL }}|${{ env.RUN_ID }}>" },
+                  { "type":"mrkdwn", "text":"*Run:* <${{ env.RUN_URL }}|${{ env.RUN_ID }}>{{}}" },
                   { "type":"mrkdwn", "text":"*Commit:* `${{ env.GIT_SHA }}`" }
                 ]}
               ]

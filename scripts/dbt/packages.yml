@@ -8,6 +8,3 @@ packages:
   # Pin the version to the 1.x series to match dbt-core 1.x.
   - package: dbt-labs/dbt_utils
     version: [">=1.0.0", "<2.0.0"]
-
-  - package: brooklyn-data/dbt_artifacts
-    version: [">=2.8.0", "<3.0.0"]
