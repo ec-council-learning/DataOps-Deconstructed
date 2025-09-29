@@ -11,7 +11,7 @@ macro-paths: ["macros"]
 
 seeds:
   logistics_demo:
-    +schema: master_data
+    +schema: bronze
 
 models:
   logistics_demo:

@@ -288,7 +288,7 @@ jobs:
       # Upload the site as a GitHub Pages artifact.  This makes the `public`
       # directory available for deployment via the deploy-pages action.
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v3
         with:
           path: public
 
