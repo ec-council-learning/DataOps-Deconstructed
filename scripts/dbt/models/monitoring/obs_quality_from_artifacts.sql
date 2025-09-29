@@ -26,8 +26,8 @@ tests as (
        count(*)                     as tests_total
     */
   from execs e
-  join inv i
-    on i.invocation_id = e.invocation_id
+  inner join inv i
+    on e.invocation_id = i.invocation_id
   group by 1, 2
 )
 
