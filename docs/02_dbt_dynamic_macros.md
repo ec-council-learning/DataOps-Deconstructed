@@ -22,37 +22,6 @@ scripts/dbt/macros/dynamic_naming.sql
 
 ---
 
-## 🔧 **DBT Project Configuration**
-
-To explicitly enable these dynamic macros in your project, configure your `dbt_project.yml`:
-
-```
-scripts/dbt/dbt_project.yml
-```
-
-with the following explicit dynamic naming references:
-
-```yaml
-models:
-  logistics_demo:
-    bronze:
-      +schema: "{{ generate_schema_name('bronze', this) }}"
-      +alias: "{{ generate_alias_name(this.name, this) }}"
-      +materialized: view
-
-    silver:
-      +schema: "{{ generate_schema_name('silver', this) }}"
-      +alias: "{{ generate_alias_name(this.name, this) }}"
-      +materialized: table
-
-    gold:
-      +schema: "{{ generate_schema_name('gold', this) }}"
-      +alias: "{{ generate_alias_name(this.name, this) }}"
-      +materialized: table
-```
-
----
-
 ## 🗃️ **DBT Models Directory**
 
 Your DBT models explicitly use these dynamic naming macros, structured as follows:

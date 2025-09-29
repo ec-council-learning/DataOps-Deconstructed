@@ -40,28 +40,6 @@ scripts/dbt/seeds/
 
 ---
 
-## ⚙️ **Explicit DBT Seeds Configuration**
-
-Explicitly configured within `dbt_project.yml`:
-
-```yaml
-seeds:
-  logistics_demo:
-    products:
-      +schema: master_data
-    warehouses:
-      +schema: master_data
-    inventory_movements:
-      +schema: bronze
-    customer_orders:
-      +schema: bronze
-```
-
-* Master data explicitly separated for clarity.
-* Transactional data explicitly managed in the Bronze schema.
-
----
-
 ## 🚀 **Generating DBT Seed Data Explicitly**
 
 Use the provided Python script to dynamically create realistic seed data:

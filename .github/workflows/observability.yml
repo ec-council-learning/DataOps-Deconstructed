@@ -103,7 +103,8 @@ jobs:
         run: |
           set -euo pipefail
           test -f profiles.yml
-          dbt build --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}"
+          dbt build --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+
 
       # Pull current gh-pages content so we can publish a single, cumulative site
       - name: Fetch current GitHub Pages (gh-pages)

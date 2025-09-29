@@ -10,23 +10,9 @@ This guide clearly outlines the initial configurations required to set up extern
 
 You'll configure these primary services:
 
-* [DBT Cloud](#dbt-cloud-setup)
 * [Snowflake](#snowflake-setup)
 * [GitHub Repository](#github-setup)
 * [Slack Integration](#slack-integration)
-
----
-
-## 📋 **DBT Cloud Setup**
-
-Follow these explicit steps to configure your DBT Cloud account:
-
-1. Sign up at [DBT Cloud Signup](https://cloud.getdbt.com/signup).
-2. Create a new workspace:
-
-   * Choose Snowflake as your target warehouse.
-   * Enter your Snowflake account credentials (below).
-3. Create a new DBT Project named `logistics_demo`.
 
 ---
 
@@ -101,20 +87,10 @@ Slack integration provides real-time alerts clearly for observability and incide
 
 ---
 
-## 🗂️ **Final Checklist**
-
-Before proceeding, confirm clearly that you have:
-
-* [ ] DBT Cloud account and workspace set up.
-* [ ] Snowflake account configured (Database, Role, Warehouse).
-* [ ] GitHub repository secrets explicitly configured.
-* [ ] Slack integration webhook set up and tested.
-
----
-
 ## 🚨 **Troubleshooting & Support**
 
 If you encounter any issues:
 
 * Verify credentials clearly for Snowflake and GitHub secrets.
 * Ensure the Slack webhook URL is correctly configured.
+* Open an issue if nothing works.
