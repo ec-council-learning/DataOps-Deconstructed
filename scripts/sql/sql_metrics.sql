@@ -1,5 +1,7 @@
--- This metrics query is executed by the compute_metrics Python script.
--- Placeholders are substituted at runtime. Uses spaced jinja with defaults.
+-- sqlfluff: disable=TMP
+--
+-- Metrics aggregation over the last 7 days.
+-- Placeholders are substituted by the caller at runtime.
 
 with d as (
   select
@@ -7,7 +9,7 @@ with d as (
     sum(total_orders)          as total_orders,
     sum(total_units_shipped)   as units_shipped,
     avg(stock_turnover_ratio)  as stock_turnover_ratio
-  from logistics_demo.{{ gold | default('gold') }}.daily_inventory_kpis
+  from logistics_demo.{{ gold }}.daily_inventory_kpis
   where report_date >= dateadd('day', -7, current_date())
   group by 1
 )

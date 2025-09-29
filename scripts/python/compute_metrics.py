@@ -35,13 +35,28 @@ def connect_from_env():
     return sf.connect(**args)
 
 
-def render_sql(template_str, gold, silver, bronze):
-    # Very small templating for {{NAME}} tokens
-    return (
-        template_str.replace("{{GOLD_SCHEMA}}", gold)
+_TOKEN_PATTERNS = {
+    "GOLD_SCHEMA": re.compile(r"\{\{\s*GOLD_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
+    "SILVER_SCHEMA": re.compile(r"\{\{\s*SILVER_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
+    "BRONZE_SCHEMA": re.compile(r"\{\{\s*BRONZE_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
+}
+
+
+def render_sql(template_str: str, gold: str, silver: str, bronze: str) -> str:
+    """Replace both compact and spaced Jinja-style tokens (with optional filters)."""
+    out = template_str
+    out = _TOKEN_PATTERNS["GOLD_SCHEMA"].sub(gold, out).replace("{{GOLD_SCHEMA}}", gold)
+    out = (
+        _TOKEN_PATTERNS["SILVER_SCHEMA"]
+        .sub(silver, out)
         .replace("{{SILVER_SCHEMA}}", silver)
+    )
+    out = (
+        _TOKEN_PATTERNS["BRONZE_SCHEMA"]
+        .sub(bronze, out)
         .replace("{{BRONZE_SCHEMA}}", bronze)
     )
+    return out
 
 
 def run_sql_script(cursor, sql_text):
