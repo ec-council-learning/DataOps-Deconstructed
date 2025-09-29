@@ -24,3 +24,7 @@ models:
     gold:
       +schema: gold
       +materialized: table
+    monitoring:
+      +schema: monitoring           # <- stable place for observability
+      +materialized: table
+      +tags: ["monitoring"]

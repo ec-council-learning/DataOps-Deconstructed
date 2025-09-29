@@ -1,8 +1,7 @@
-name: Observability Metrics
+name: Observability Metrics (dbt Monitoring)
 
-# This workflow generates a Snowflake/DBT-backed Observability dashboard
-# and publishes it to GitHub Pages. It follows the same structure and
-# conventions as data_pipeline.yml (setup → workloads → notify).
+# Builds first-class dbt "monitoring" models and publishes a unified Pages site.
+# Publishes per-environment under: /<env>/latest and archives runs at: /<env>/runs/<RUN_ID>/
 
 on:
   workflow_call:
@@ -12,18 +11,13 @@ on:
         required: false
         type: string
       extra_flags:
-        description: "Optional flags or selectors"
+        description: "Optional flags/selectors for dbt"
         required: false
         type: string
       requirements_path:
-        description: "Path to Python requirements file"
+        description: "Path to Python requirements file (for Snowflake connector, etc.)"
         required: false
         type: string
-      bronze_schema:
-        description: "Bronze (staging/seeds) schema containing STG_* and seed tables"
-        required: false
-        type: string
-        default: "bronze"
     secrets:
       SNOWFLAKE_ACCOUNT: {required: false}
       SNOWFLAKE_USER: {required: false}
@@ -34,68 +28,20 @@ on:
       SNOWFLAKE_PRIVATE_KEY_B64: {required: false}
       SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: {required: false}
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 concurrency:
   group: observability-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-  SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-  SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
-  SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-  SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-
 jobs:
-  # -----------------------------------------------------------------------------
-  # Setup job: resolves the dbt environment and schema based on branch name.
-  # Saves these values to outputs for later jobs.
-  # -----------------------------------------------------------------------------
-  setup:
+  generate_metrics_dashboard:
     runs-on: ubuntu-latest
-    outputs:
-      dbt_env: ${{ steps.set-env.outputs.DBT_ENVIRONMENT }}
-      dbt_schema: ${{ steps.set-env.outputs.DBT_TARGET_SCHEMA }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Determine dbt target (env/schema)
-        id: set-env
-        shell: bash
-        run: |
-          set -euo pipefail
-          REF="${{ github.ref }}"
-          if [[ "$REF" == "refs/heads/main" ]]; then
-            DBT_ENVIRONMENT=prod
-            DBT_TARGET_SCHEMA=prod
-          elif [[ "$REF" == "refs/heads/develop" ]]; then
-            DBT_ENVIRONMENT=dev
-            DBT_TARGET_SCHEMA=dev
-          else
-            ISSUE_ID=${{ github.run_id }}
-            DBT_ENVIRONMENT=ci_cd
-            DBT_TARGET_SCHEMA="ci_${ISSUE_ID}"
-          fi
-          echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT"       | tee -a "$GITHUB_ENV"
-          echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA"   | tee -a "$GITHUB_ENV"
-          echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT"     >> "$GITHUB_OUTPUT"
-          echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA" >> "$GITHUB_OUTPUT"
-
-  # -----------------------------------------------------------------------------
-  # Generate & Publish Observability Dashboard
-  # -----------------------------------------------------------------------------
-  observability:
-    name: "📊 Observability Metrics"
-    needs: [setup]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
     env:
-      # Snowflake / dbt
+      # Snowflake
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
       SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
@@ -104,20 +50,21 @@ jobs:
       SNOWFLAKE_PRIVATE_KEY_B64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}
       SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
 
-      # Context (non-sensitive)
+      # Context
       RUN_ID: ${{ github.run_id }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       GIT_SHA: ${{ github.sha }}
-      DBT_PROFILES_DIR: .
-      DBT_ENVIRONMENT: ${{ needs.setup.outputs.dbt_env }}
-      DBT_TARGET_SCHEMA: ${{ needs.setup.outputs.dbt_schema }}
-      BRONZE_SCHEMA: ${{ inputs.bronze_schema }}
+      DBT_ENVIRONMENT: ${{ inputs.environment || 'prod' }}
+      DBT_PROFILES_DIR: ${{ github.workspace }}/scripts/dbt
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       TZ: UTC
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -126,7 +73,7 @@ jobs:
             **/requirements.txt
             ${{ inputs.requirements_path }}
 
-      - name: Install Python dependencies
+      - name: Install Python deps (connector, markdown, jq)
         if: inputs.requirements_path != ''
         shell: bash
         run: |
@@ -134,16 +81,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r "${{ inputs.requirements_path }}"
 
-      - name: Install DBT dependencies
+      - name: Install dbt packages
         working-directory: scripts/dbt
         shell: bash
         run: |
           set -euo pipefail
           dbt deps
 
-      # === Aggregate publishing to a single GitHub Pages site ===
+      # Build only the monitoring area (and artifacts if you chose to include that dependency)
+      - name: Build monitoring models
+        working-directory: scripts/dbt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f profiles.yml
+          dbt build --select monitoring+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}"
 
-      # Pull the current gh-pages branch so we can preserve/extend what’s already published
+      # Pull current gh-pages content so we can publish a single, cumulative site
       - name: Fetch current GitHub Pages (gh-pages)
         uses: actions/checkout@v4
         with:
@@ -152,7 +106,6 @@ jobs:
           fetch-depth: 1
         continue-on-error: true
 
-      # Prime the working site directory with existing content (if any)
       - name: Seed working site from current gh-pages
         shell: bash
         run: |
@@ -163,7 +116,8 @@ jobs:
             rsync -a --delete --exclude='.git' gh-pages/ _site/
           fi
 
-      - name: Compute KPIs & DQ signals
+      # Query the warehouse monitoring tables and produce a single JSON for rendering
+      - name: Export metrics from monitoring schema
         id: kpis
         shell: bash
         run: |
@@ -173,44 +127,86 @@ jobs:
           LATEST_DIR="_site/${ENV_SLUG}/latest"
           mkdir -p "${RUN_DIR}" "${LATEST_DIR}"
 
-          python scripts/python/compute_metrics.py \
-            --gold-schema   "gold" \
-            --silver-schema "silver" \
-            --bronze-schema "${BRONZE_SCHEMA}" \
-            --sql-file "scripts/sql/kpi_rebuild_and_select.sql" \
-            --out "dashboard_metrics.json"
+          python - <<'PY'
+          import os, json
+          import snowflake.connector as sf
 
-          # keep a copy in the run folder (raw data)
-          cp dashboard_metrics.json "${RUN_DIR}/dashboard_metrics.json"
+          acct = os.getenv("SNOWFLAKE_ACCOUNT")
+          user = os.getenv("SNOWFLAKE_USER")
+          pwd  = os.getenv("SNOWFLAKE_PASSWORD")
+          role = os.getenv("SNOWFLAKE_ROLE")
+          wh   = os.getenv("SNOWFLAKE_WAREHOUSE")
 
-          echo "kpis=$(jq -c '.' dashboard_metrics.json)" >> "$GITHUB_OUTPUT"
+          conn = sf.connect(account=acct, user=user, password=pwd, role=role, warehouse=wh)
+          cs = conn.cursor()
+
+          # 7d KPIs
+          cs.execute("""
+            select last_date, wk_orders, wk_units, avg_turnover
+            from logistics_demo.monitoring.obs_kpis_7d
+          """)
+          last_date, wk_orders, wk_units, avg_turnover = cs.fetchone()
+
+          # Freshness
+          cs.execute("""
+            select freshness_hours
+            from logistics_demo.monitoring.obs_freshness
+          """)
+          freshness_hours = cs.fetchone()[0]
+
+          # Preview rows (top 10 by latest date)
+          cs.execute("""
+            select report_date, warehouse_name, product_name, category,
+                   total_orders, total_units_shipped, total_units_replenished,
+                   stock_turnover_ratio
+            from logistics_demo.monitoring.obs_kpis_daily
+            order by report_date desc, warehouse_name, product_name
+            limit 10
+          """)
+          cols = [c[0] for c in cs.description]
+          preview = [dict(zip(cols, r)) for r in cs.fetchall()]
+
+          out = {
+            "last_date": str(last_date) if last_date else None,
+            "wk_orders": int(wk_orders or 0),
+            "wk_units": int(wk_units or 0),
+            "avg_turnover": float(avg_turnover or 0),
+            "freshness_hours": freshness_hours,
+            "preview": preview
+          }
+          os.makedirs(os.path.join("_site", os.getenv("DBT_ENVIRONMENT"), "runs", os.getenv("RUN_ID")), exist_ok=True)
+          json.dump(out, open(os.path.join("_site", os.getenv("DBT_ENVIRONMENT"), "runs", os.getenv("RUN_ID"), "dashboard_metrics.json"), "w"), indent=2)
+
+          cs.close(); conn.close()
+          PY
+
           echo "ENV_SLUG=${ENV_SLUG}" >> "$GITHUB_OUTPUT"
           echo "RUN_DIR=${RUN_DIR}"   >> "$GITHUB_OUTPUT"
           echo "LATEST_DIR=${LATEST_DIR}" >> "$GITHUB_OUTPUT"
 
-      - name: Render Markdown & HTML (env/latest + env/runs/RUN_ID)
+      - name: Render Markdown & HTML (env/latest + run archive)
         shell: bash
         run: |
           set -euo pipefail
           ENV_SLUG="${{ steps.kpis.outputs.ENV_SLUG }}"
           RUN_DIR="${{ steps.kpis.outputs.RUN_DIR }}"
           LATEST_DIR="${{ steps.kpis.outputs.LATEST_DIR }}"
-          data_file="${RUN_DIR}/dashboard_metrics.json"  # already copied there
+          data_file="${RUN_DIR}/dashboard_metrics.json"
+
           python - <<'PY'
           import json, markdown, os
           from datetime import datetime, timezone
+
+          env_slug = os.getenv("ENV_SLUG")
           run_id   = os.getenv("RUN_ID")
           run_url  = os.getenv("RUN_URL")
           sha      = os.getenv("GIT_SHA")
-          env_slug = os.getenv("ENV_SLUG")
           run_dir  = os.getenv("RUN_DIR")
           latest   = os.getenv("LATEST_DIR")
-          data = json.load(open(f"{run_dir}/dashboard_metrics.json"))
 
-          trend = (f"{data.get('order_trend_pct')}%"
-                   if data.get('order_trend_pct') is not None else "n/a")
-          fresh = (f"{data.get('freshness_hours')}h"
-                   if data.get('freshness_hours') is not None else "n/a")
+          data = json.load(open(f"{run_dir}/dashboard_metrics.json"))
+          trend = "n/a"  # can be derived inside monitoring if desired
+          fresh = f"{data.get('freshness_hours')}h" if data.get('freshness_hours') is not None else "n/a"
 
           md = f"""# Observability Dashboard — {env_slug}
 
@@ -218,24 +214,34 @@ jobs:
           **Commit:** `{sha[:7]}`
           **As of:** {datetime.now(timezone.utc).isoformat()}
 
-          ## Business KPIs (Gold)
+          ## Business KPIs (Gold, 7d)
           - Week Orders: **{data.get('wk_orders','n/a')}**
           - Week Units Shipped: **{data.get('wk_units','n/a')}**
           - Avg Stock Turnover: **{data.get('avg_turnover','n/a')}**
           - Orders Trend vs last week: **{trend}**
           - Latest Date: **{data.get('last_date','n/a')}**
 
-          ## Data Quality
-          - Tests: **{data.get('tests_passed','0')} / {data.get('tests_total','0')}** passed (**{data.get('pass_rate_pct','0')}%**)
-          - Freshness (silver snapshot): **{fresh}**
-          - Anomaly Detected: **{':warning: YES' if data.get('anomaly_flag') else 'No'}**
-          """
+          ## Data Freshness
+          - Silver snapshot lag: **{fresh}**
+
+          ## Daily Preview (latest 10)
+          """  # noqa: E501
+
+          # add preview table
+          preview = data.get("preview", [])
+          if preview:
+              headers = preview[0].keys()
+              # simple markdown table
+              table = "| " + " | ".join(headers) + " |\n"
+              table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+              for row in preview:
+                  table += "| " + " | ".join(str(row.get(h, "")) for h in headers) + " |\n"
+              md += "\n" + table
 
           os.makedirs(run_dir, exist_ok=True)
           os.makedirs(latest,  exist_ok=True)
           open(f"{run_dir}/dashboard.md","w").write(md)
           open(f"{run_dir}/index.html","w").write(markdown.markdown(md, extensions=['tables']))
-          # update env/latest as a copy of this run
           open(f"{latest}/dashboard.md","w").write(md)
           open(f"{latest}/index.html","w").write(markdown.markdown(md, extensions=['tables']))
           PY
@@ -244,61 +250,38 @@ jobs:
           RUN_DIR: ${{ steps.kpis.outputs.RUN_DIR }}
           LATEST_DIR: ${{ steps.kpis.outputs.LATEST_DIR }}
 
-      - name: Generate dbt docs and copy to env/latest + run archive
-        working-directory: scripts/dbt
+      - name: Rebuild top-level index (env latest + 10 recent runs)
         shell: bash
         run: |
           set -euo pipefail
-          dbt docs generate --target "${DBT_ENVIRONMENT}"
-          # copy artifacts to the site
-          cd "${GITHUB_WORKSPACE}"
-          ENV_SLUG="${{ steps.kpis.outputs.ENV_SLUG }}"
-          RUN_DIR="${{ steps.kpis.outputs.RUN_DIR }}"
-          LATEST_DIR="${{ steps.kpis.outputs.LATEST_DIR }}"
-          mkdir -p "${RUN_DIR}/dbt-docs" "${LATEST_DIR}/dbt-docs"
-          # core docs + manifest
-          cp -R scripts/dbt/target/*.json "${RUN_DIR}/dbt-docs/"  2>/dev/null || true
-          cp -R scripts/dbt/target/*.json "${LATEST_DIR}/dbt-docs/" 2>/dev/null || true
-          cp -R scripts/dbt/target/manifest.json "${RUN_DIR}/dbt-docs/"  2>/dev/null || true
-          cp -R scripts/dbt/target/manifest.json "${LATEST_DIR}/dbt-docs/" 2>/dev/null || true
-          # static docs website (if produced)
-          if [ -d scripts/dbt/target/docs ]; then
-            cp -R scripts/dbt/target/docs/* "${RUN_DIR}/dbt-docs/"
-            cp -R scripts/dbt/target/docs/* "${LATEST_DIR}/dbt-docs/"
-          fi
-
-      - name: Rebuild top-level index (link all envs & recent runs)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Simple index that lists envs and their latest links + the most recent 10 runs
           python - <<'PY'
           import os, pathlib, html
           root = pathlib.Path("_site")
+          if not root.exists():
+              root.mkdir(parents=True, exist_ok=True)
+
           envs = sorted([p for p in root.iterdir() if p.is_dir()])
-          def runs(envdir):
-            rdir = envdir / "runs"
-            if not rdir.exists(): return []
-            # sort by directory name (RUN_ID); GitHub run_id grows over time
-            return sorted([p for p in rdir.iterdir() if p.is_dir()], key=lambda x: x.name, reverse=True)[:10]
           parts = ["<h1>Observability Dashboards</h1><ul>"]
-          for e in envs:
-            parts.append(f"<li><b>{html.escape(e.name)}</b>: "
-                         f"<a href='{e.name}/latest/'>latest</a>"
-                         f" — runs: " + ", ".join(
-                           f\"<a href='{e.name}/runs/{html.escape(r.name)}/'>{html.escape(r.name)}</a>\" for r in runs(e)
-                         ) + "</li>")
+          for env in envs:
+              runs_dir = env / "runs"
+              runs = []
+              if runs_dir.exists():
+                  runs = sorted([d for d in runs_dir.iterdir() if d.is_dir()],
+                                key=lambda x: x.name, reverse=True)[:10]
+              latest = f"{html.escape(env.name)}/latest/"
+              run_links = ", ".join(f"<a href='{html.escape(env.name)}/runs/{html.escape(r.name)}/'>{html.escape(r.name)}</a>" for r in runs)
+              parts.append(f"<li><b>{html.escape(env.name)}</b>: <a href='{latest}'>latest</a>"
+                           + (f" — runs: {run_links}" if run_links else "") + "</li>")
           parts.append("</ul>")
           open("_site/index.html","w").write("\n".join(parts))
           PY
 
-      - name: Deploy to GitHub Pages (single site, aggregated)
+      - name: Deploy to GitHub Pages (single aggregated site)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_site
           keep_files: true
-
 
       - name: Slack — Success
         if: success() && env.SLACK_WEBHOOK_URL != ''
@@ -310,16 +293,11 @@ jobs:
           payload: |
             {
               "blocks": [
-                { "type": "header", "text": { "type": "plain_text", "text": "✅ Observability Dashboard: Healthy Run" } },
+                { "type": "header", "text": { "type": "plain_text", "text": "✅ Observability (dbt monitoring) published" } },
                 { "type": "section", "fields": [
                   { "type":"mrkdwn", "text":"*Run:* <${{ env.RUN_URL }}|${{ env.RUN_ID }}>" },
                   { "type":"mrkdwn", "text":"*Commit:* `${{ env.GIT_SHA }}`" }
-                ]},
-                { "type": "divider" },
-                { "type": "section", "text": { "type":"mrkdwn",
-                  "text": "*Business KPIs (7d)*\n• Orders: *${{ fromJson(steps.kpis.outputs.kpis).wk_orders }}*\n• Units: *${{ fromJson(steps.kpis.outputs.kpis).wk_units }}*\n• Turnover: *${{ fromJson(steps.kpis.outputs.kpis).avg_turnover }}*\n• Order trend: *${{ fromJson(steps.kpis.outputs.kpis).order_trend_pct != null && format('{0}%', fromJson(steps.kpis.outputs.kpis).order_trend_pct) || 'n/a' }}*" } },
-                { "type": "section", "text": { "type":"mrkdwn",
-                  "text": "*Data Quality*\n• Tests: *${{ fromJson(steps.kpis.outputs.kpis).tests_passed }} / ${{ fromJson(steps.kpis.outputs.kpis).tests_total }}* (*${{ fromJson(steps.kpis.outputs.kpis).pass_rate_pct }}%*)\n• Freshness: *${{ fromJson(steps.kpis.outputs.kpis).freshness_hours != null && format('{0}h', fromJson(steps.kpis.outputs.kpis).freshness_hours) || 'n/a' }}*\n• Anomaly: *${{ fromJson(steps.kpis.outputs.kpis).anomaly_flag && ':warning: YES' || 'No' }}*" } }
+                ]}
               ]
             }
 
@@ -331,4 +309,4 @@ jobs:
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         with:
           payload: |
-            { "text": "🚨 Observability dashboard generation failed. See run ${{ env.RUN_URL }}." }
+            { "text": "🚨 Observability (dbt monitoring) failed. See ${{ env.RUN_URL }}." }
