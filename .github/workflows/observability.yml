@@ -88,6 +88,10 @@ jobs:
           set -euo pipefail
           dbt deps
 
+      # Generate dynamic CSV seed files
+      - name: Generate Dynamic CSV Seed Files
+        run: python scripts/python/create_seed.py
+
       # Build only the monitoring area (and artifacts if you chose to include that dependency)
       - name: Build monitoring models
         working-directory: scripts/dbt
