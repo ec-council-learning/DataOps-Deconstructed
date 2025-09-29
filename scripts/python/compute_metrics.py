@@ -10,6 +10,12 @@ import snowflake.connector as sf
 
 DB_NAME = "LOGISTICS_DEMO"  # adjust here if needed
 
+_PATTERNS = {
+    "GOLD_SCHEMA": re.compile(r"\{\{\s*GOLD_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
+    "SILVER_SCHEMA": re.compile(r"\{\{\s*SILVER_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
+    "BRONZE_SCHEMA": re.compile(r"\{\{\s*BRONZE_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
+}
+
 
 def connect_from_env():
     args = {
@@ -35,27 +41,11 @@ def connect_from_env():
     return sf.connect(**args)
 
 
-_TOKEN_PATTERNS = {
-    "GOLD_SCHEMA": re.compile(r"\{\{\s*GOLD_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
-    "SILVER_SCHEMA": re.compile(r"\{\{\s*SILVER_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
-    "BRONZE_SCHEMA": re.compile(r"\{\{\s*BRONZE_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
-}
-
-
-def render_sql(template_str: str, gold: str, silver: str, bronze: str) -> str:
-    """Replace both compact and spaced Jinja-style tokens (with optional filters)."""
+def render_sql(template_str, gold, silver, bronze):
     out = template_str
-    out = _TOKEN_PATTERNS["GOLD_SCHEMA"].sub(gold, out).replace("{{GOLD_SCHEMA}}", gold)
-    out = (
-        _TOKEN_PATTERNS["SILVER_SCHEMA"]
-        .sub(silver, out)
-        .replace("{{SILVER_SCHEMA}}", silver)
-    )
-    out = (
-        _TOKEN_PATTERNS["BRONZE_SCHEMA"]
-        .sub(bronze, out)
-        .replace("{{BRONZE_SCHEMA}}", bronze)
-    )
+    out = _PATTERNS["GOLD_SCHEMA"].sub(gold, out)
+    out = _PATTERNS["SILVER_SCHEMA"].sub(silver, out)
+    out = _PATTERNS["BRONZE_SCHEMA"].sub(bronze, out)
     return out
 
 
