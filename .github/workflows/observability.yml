@@ -108,7 +108,7 @@ jobs:
       RUN_ID: ${{ github.run_id }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       GIT_SHA: ${{ github.sha }}
-      DBT_PROFILES_DIR: scripts/dbt
+      DBT_PROFILES_DIR: .
       DBT_ENVIRONMENT: ${{ needs.setup.outputs.dbt_env }}
       DBT_TARGET_SCHEMA: ${{ needs.setup.outputs.dbt_schema }}
       MASTER_SCHEMA: ${{ inputs.master_schema }}
