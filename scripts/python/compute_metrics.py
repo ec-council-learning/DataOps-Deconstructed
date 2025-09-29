@@ -11,9 +11,9 @@ import snowflake.connector as sf
 DB_NAME = "LOGISTICS_DEMO"  # adjust here if needed
 
 _PATTERNS = {
-    "GOLD": re.compile(r"__GOLD_SCHEMA__"),
-    "SILVER": re.compile(r"__SILVER_SCHEMA__"),
-    "BRONZE": re.compile(r"__BRONZE_SCHEMA__"),
+    "GOLD": re.compile(r"__gold_schema__"),
+    "SILVER": re.compile(r"__silver_schema__"),
+    "BRONZE": re.compile(r"__bronze_schema__"),
 }
 
 

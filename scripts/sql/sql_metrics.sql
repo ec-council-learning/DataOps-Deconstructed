@@ -1,6 +1,6 @@
 --
 -- Metrics aggregation over the last 7 days.
--- Placeholder replaced by Python: __GOLD_SCHEMA__
+-- Placeholder replaced by Python: __gold_schema__
 --
 
 with d as (
@@ -9,7 +9,7 @@ with d as (
     sum(total_orders)          as total_orders,
     sum(total_units_shipped)   as units_shipped,
     avg(stock_turnover_ratio)  as stock_turnover_ratio
-  from logistics_demo.__GOLD_SCHEMA__.daily_inventory_kpis
+  from logistics_demo.__gold_schema__.daily_inventory_kpis
   where report_date >= dateadd('day', -7, current_date())
   group by 1
 )

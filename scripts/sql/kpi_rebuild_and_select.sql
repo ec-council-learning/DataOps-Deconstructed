@@ -1,13 +1,13 @@
 --
 -- KPI table rebuild & preview. Placeholders are neutral and replaced by Python:
---   __GOLD_SCHEMA__, __SILVER_SCHEMA__, __BRONZE_SCHEMA__
+--   __gold_schema__, __silver_schema__, __bronze_schema__
 --
 
 -- 1) Ensure KPI schema exists
-create schema if not exists logistics_demo.__GOLD_SCHEMA__;
+create schema if not exists logistics_demo.__gold_schema__;
 
 -- 2) Rebuild KPI table in the gold schema from silver snapshot + bronze staging
-create or replace table logistics_demo.__GOLD_SCHEMA__.daily_inventory_kpis as
+create or replace table logistics_demo.__gold_schema__.daily_inventory_kpis as
 with s as (
   select
     movement_date as report_date,
@@ -17,23 +17,23 @@ with s as (
     coalesce(qty_shipped, 0)     as qty_shipped,
     coalesce(qty_replenished, 0) as qty_replenished,
     coalesce(qty_adjusted, 0)    as qty_adjusted
-  from logistics_demo.__SILVER_SCHEMA__.daily_inventory_snapshot
+  from logistics_demo.__silver_schema__.daily_inventory_snapshot
 )
 select
-  s.report_date                                     as report_date,
-  w.warehouse_name                                  as warehouse_name,
-  p.product_name                                    as product_name,
-  p.category                                        as category,
-  s.qty_ordered                                     as total_orders,
-  s.qty_shipped                                     as total_units_shipped,
-  s.qty_replenished                                 as total_units_replenished,
+  s.report_date,
+  w.warehouse_name,
+  p.product_name,
+  p.category,
+  s.qty_ordered,
+  s.qty_shipped,
+  s.qty_replenished,
   -- classic turnover: shipped / replenished (avoid div-by-zero)
   round( s.qty_shipped / nullif(s.qty_replenished, 0), 2 ) as stock_turnover_ratio
-from logistics_demo.__BRONZE_SCHEMA__.stg_warehouses w
+from logistics_demo.__bronze_schema__.stg_warehouses w
 join s
-  on s.warehouse_id = w.warehouse_id
-join logistics_demo.__BRONZE_SCHEMA__.stg_products p
-  on s.product_id = p.product_id;
+  on s.warehouse_id = logistics_demo.__bronze_schema__.stg_warehouses.warehouse_id
+join logistics_demo.__bronze_schema__.stg_products
+  on s.product_id = logistics_demo.__bronze_schema__.stg_products.product_id;
 
 -- 3) Final SELECT (Python returns this result set)
 select
@@ -45,6 +45,6 @@ select
   total_units_shipped,
   total_units_replenished,
   stock_turnover_ratio
-from logistics_demo.__GOLD_SCHEMA__.daily_inventory_kpis
+from logistics_demo.__gold_schema__.daily_inventory_kpis
 order by report_date desc
 limit 10;
