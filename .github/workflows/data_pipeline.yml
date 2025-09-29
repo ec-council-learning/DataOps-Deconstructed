@@ -217,7 +217,7 @@ jobs:
   # Gold layer: builds business marts and runs tests.  Depends on silver.
   # -----------------------------------------------------------------------------
   gold_layer:
-    needs: [setup, silver_layer]
+    needs: [setup, bronze_layer, silver_layer]
     runs-on: ubuntu-latest
     outputs:
       passed: ${{ steps.gold_tests.outputs.passed }}
