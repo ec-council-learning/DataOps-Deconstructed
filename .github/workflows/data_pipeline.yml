@@ -254,7 +254,7 @@ jobs:
         run: python scripts/python/create_seed.py
 
       # Load seeds into the current schema
-      - name: Seed data for Silver
+      - name: Seed data for Gold
         working-directory: scripts/dbt
         run: dbt seed
 

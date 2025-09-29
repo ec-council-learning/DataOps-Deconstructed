@@ -141,6 +141,15 @@ jobs:
           set -euo pipefail
           dbt deps
 
+      # Regenerate dynamic CSV seed files (jobs run in isolation)
+      - name: Generate Dynamic CSV Seed Files
+        run: python scripts/python/create_seed.py
+
+      # Load seeds into the current schema
+      - name: Seed data for Observability
+        working-directory: scripts/dbt
+        run: dbt seed
+
       # Optional: build/tests to ensure warehouse is fresh before reading metrics
       - name: Run dbt build/tests (layer-agnostic)
         working-directory: scripts/dbt
