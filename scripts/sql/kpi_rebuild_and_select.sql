@@ -19,6 +19,7 @@ with s as (
     coalesce(qty_adjusted, 0)    as qty_adjusted
   from logistics_demo.__silver_schema__.daily_inventory_snapshot
 )
+
 select
   s.report_date,
   w.warehouse_name,
@@ -32,8 +33,9 @@ select
 from logistics_demo.__bronze_schema__.stg_warehouses w
 join s
   on s.warehouse_id = logistics_demo.__bronze_schema__.stg_warehouses.warehouse_id
-join logistics_demo.__bronze_schema__.stg_products
-  on s.product_id = logistics_demo.__bronze_schema__.stg_products.product_id;
+join logistics_demo.__bronze_schema__.stg_products p
+  on s.product_id = logistics_demo.__bronze_schema__.stg_products.product_id
+  ;
 
 -- 3) Final SELECT (Python returns this result set)
 select
