@@ -169,48 +169,48 @@ jobs:
         working-directory: scripts/dbt
         run: dbt deps
 
-      # Re-generate CSV seeds in this job.  Without this step, dbt cannot
-      # find the seed nodes when compiling the silver layer because seeds
-      # generated in bronze_layer do not persist across jobs.
+      # Regenerate dynamic CSV seed files (jobs run in isolation)
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 
-      # Seed the regenerated CSVs into the target schema.
+      # Load seeds into the current schema
       - name: Seed data for Silver
         working-directory: scripts/dbt
         run: dbt seed
 
-      # Build the silver models (cleaned/conformed).  Refers to staging
-      # views that read from seeds via ref(), so seeds must be present.
       - name: Build Silver (cleaned/conformed)
         working-directory: scripts/dbt
         run: dbt run --select path:models/silver/
 
-      # Run tests on silver objects and capture results.
       - name: Silver tests (constraints, nullability, referential)
         id: silver_tests
         working-directory: scripts/dbt
         run: |
-          dbt test --select path:models/silver/ --output json > ../silver_test_results.json || true
+          # Run tests and capture run_results.json (no --output flag)
+          dbt test --select path:models/silver/ || true
+          cp target/run_results.json ../silver_test_results.json
           PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../silver_test_results.json)
           TOTAL=$(jq '.results | length' ../silver_test_results.json)
           RATE=$(python - <<'PY'
-          import json; d=json.load(open("silver_test_results.json"))
-          tot=len(d.get("results",[])) or 1
-          pas=sum(1 for r in d.get("results",[]) if r.get("status")=="pass")
-          print(round(100*pas/tot,1))
+          import json
+          with open("../silver_test_results.json") as f:
+              d=json.load(f)
+          total=len(d.get("results",[])) or 1
+          passed=sum(1 for r in d.get("results",[]) if r.get("status")=="pass")
+          print(round(100*passed/total, 1))
           PY
           )
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "rate=$RATE" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL"  >> $GITHUB_OUTPUT
+          echo "rate=$RATE"    >> $GITHUB_OUTPUT
 
-      # Check source freshness for silver and expose results.
       - name: Silver source freshness
         id: silver_fresh
         working-directory: scripts/dbt
         run: |
-          dbt source freshness --output json > ../silver_fresh.json || true
+          # Run freshness checks and copy the resulting sources.json
+          dbt source freshness || true
+          cp target/sources.json ../silver_fresh.json
           echo "file=../silver_fresh.json" >> $GITHUB_OUTPUT
 
   # -----------------------------------------------------------------------------
@@ -229,7 +229,6 @@ jobs:
       DBT_TARGET_SCHEMA: ${{ needs.setup.outputs.dbt_schema }}
       DBT_PROFILES_DIR: .
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -250,29 +249,30 @@ jobs:
         working-directory: scripts/dbt
         run: dbt deps
 
-      # Build the business marts in gold.
       - name: Build Gold (business marts)
         working-directory: scripts/dbt
         run: dbt run --select path:models/gold/
 
-      # Run tests on gold objects and capture results.
       - name: Gold tests (business rules)
         id: gold_tests
         working-directory: scripts/dbt
         run: |
-          dbt test --select path:models/gold/ --output json > ../gold_test_results.json || true
+          dbt test --select path:models/gold/ || true
+          cp target/run_results.json ../gold_test_results.json
           PASSED=$(jq '[.results[] | select(.status=="pass")] | length' ../gold_test_results.json)
           TOTAL=$(jq '.results | length' ../gold_test_results.json)
           RATE=$(python - <<'PY'
-          import json; d=json.load(open("gold_test_results.json"))
-          tot=len(d.get("results",[])) or 1
-          pas=sum(1 for r in d.get("results",[]) if r.get("status")=="pass")
-          print(round(100*pas/tot,1))
+          import json
+          with open("../gold_test_results.json") as f:
+              d=json.load(f)
+          total=len(d.get("results",[])) or 1
+          passed=sum(1 for r in d.get("results",[]) if r.get("status")=="pass")
+          print(round(100*passed/total, 1))
           PY
           )
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          echo "rate=$RATE" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL"  >> $GITHUB_OUTPUT
+          echo "rate=$RATE"    >> $GITHUB_OUTPUT
 
   # -----------------------------------------------------------------------------
   # Notification: posts a summary of the pipeline result to Slack.  Always runs.
@@ -317,4 +317,3 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-
