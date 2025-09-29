@@ -19,11 +19,11 @@ on:
         description: "Path to Python requirements file"
         required: false
         type: string
-      master_schema:
-        description: "Master-data schema containing seeds (e.g., master_data or bronze)"
+      bronze_schema:
+        description: "Bronze (staging/seeds) schema containing STG_* and seed tables"
         required: false
         type: string
-        default: "master_data"
+        default: "bronze"
     secrets:
       SNOWFLAKE_ACCOUNT: {required: false}
       SNOWFLAKE_USER: {required: false}
@@ -111,7 +111,7 @@ jobs:
       DBT_PROFILES_DIR: .
       DBT_ENVIRONMENT: ${{ needs.setup.outputs.dbt_env }}
       DBT_TARGET_SCHEMA: ${{ needs.setup.outputs.dbt_schema }}
-      MASTER_SCHEMA: ${{ inputs.master_schema }}
+      BRONZE_SCHEMA: ${{ inputs.bronze_schema }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       TZ: UTC
     steps:
@@ -141,16 +141,7 @@ jobs:
           set -euo pipefail
           dbt deps
 
-      # Regenerate dynamic CSV seed files (jobs run in isolation)
-      - name: Generate Dynamic CSV Seed Files
-        run: python scripts/python/create_seed.py
-
-      # Load seeds into the current schema
-      - name: Seed data for Observability
-        working-directory: scripts/dbt
-        run: dbt seed
-
-      # Optional: build/tests to ensure warehouse is fresh before reading metrics
+      # (Optional) If the dashboard must refresh warehouse objects first, keep these:
       - name: Run dbt build/tests (layer-agnostic)
         working-directory: scripts/dbt
         shell: bash
@@ -169,7 +160,7 @@ jobs:
           python scripts/python/compute_metrics.py \
             --gold-schema   "gold" \
             --silver-schema "silver" \
-            --master-schema "${MASTER_SCHEMA}" \
+            --bronze-schema "${BRONZE_SCHEMA}" \
             --sql-file "scripts/sql/kpi_rebuild_and_select.sql" \
             --out "dashboard_metrics.json"
           echo "kpis=$(jq -c '.' dashboard_metrics.json)" >> "$GITHUB_OUTPUT"
