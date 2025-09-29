@@ -249,6 +249,15 @@ jobs:
         working-directory: scripts/dbt
         run: dbt deps
 
+      # Regenerate dynamic CSV seed files (jobs run in isolation)
+      - name: Generate Dynamic CSV Seed Files
+        run: python scripts/python/create_seed.py
+
+      # Load seeds into the current schema
+      - name: Seed data for Silver
+        working-directory: scripts/dbt
+        run: dbt seed
+
       - name: Build Gold (business marts)
         working-directory: scripts/dbt
         run: dbt run --select path:models/gold/
