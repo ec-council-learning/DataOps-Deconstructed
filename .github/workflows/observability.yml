@@ -108,19 +108,19 @@ jobs:
 
       - name: Bronze checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:bronze ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+        run: dbt test --select tag:bronze || true
 
       - name: Silver checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:silver ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+        run: dbt test --select tag:silver || true
 
       - name: Gold checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:gold ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+        run: dbt test --select tag:gold || true
 
       - name: Monitoring checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:observability ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+        run: dbt test --select tag:observability || true
 
       - name: Slack — Success
         if: success() && env.SLACK_WEBHOOK_URL != ''
