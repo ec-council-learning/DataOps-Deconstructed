@@ -189,8 +189,9 @@ jobs:
       environment: ${{ needs.resolve_context.outputs.environment }}
       extra_flags: ""
       requirements_path: "scripts/python/obs.req.txt"
-      master_schema: "master_data"
+      bronze_schema: "bronze"
     secrets: inherit # pragma: allowlist secret
+
 
   # ---------------- Manual cleanup via Issue label ----------------
   manual_cleanup:
