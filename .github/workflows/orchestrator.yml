@@ -96,9 +96,6 @@ jobs:
           EXPLICIT_RUN_TAG: ${{ ( env.RUN_SECURITY_TAG == 'true' || env.RUN_ELT == 'true' || env.RUN_OBS_TAG == 'true') }}
 
           # ---------- stage decisions ----------
-          # Security: skip if globally skipped or explicitly skipped; then:
-          # If explicit run tags exist, run only when run_security_tag or run_elt is present.
-          # Otherwise (no explicit run tags), default yes (incl. run_all, run_orch, feature).
           RUN_SECURITY: ${{ (
               env.SKIP_ALL == 'true' || env.SKIP_SECURITY_TAG == 'true'
             ) && 'no' || (
@@ -107,8 +104,6 @@ jobs:
               env.EXPLICIT_RUN_TAG == 'true'
             ) && 'no' || 'yes' }}
 
-          # ELT: skip if globally skipped or explicitly skipped; then:
-          # If explicit run tags exist, run only when run_elt is present; otherwise default yes.
           RUN_PIPELINES: ${{ (
               env.SKIP_ALL == 'true' || env.SKIP_ELT == 'true'
             ) && 'no' || (
@@ -117,8 +112,6 @@ jobs:
               env.EXPLICIT_RUN_TAG == 'true'
             ) && 'no' || 'yes' }}
 
-          # Observability: skip if globally skipped or explicitly skipped; then:
-          # If explicit run tags exist, run only when run_obs_tag is present; otherwise default yes.
           RUN_OBS: ${{ (
               env.SKIP_ALL == 'true' || env.SKIP_OBS_TAG == 'true'
             ) && 'no' || (
@@ -200,7 +193,7 @@ jobs:
 
   pipelines:
     name: "🛠️ Medallion ELT"
-    needs: [security, resolve_context, provision_feature, gate]   # ← ensure provision happens first
+    needs: [security, resolve_context, provision_feature, gate]
     if: ${{ needs.gate.outputs.proceed == 'true' && needs.gate.outputs.run_pipelines == 'yes' && (needs.gate.outputs.run_security != 'yes' || needs.security.result == 'success') }}
     uses: ./.github/workflows/data_pipeline.yml
     with:
@@ -257,11 +250,11 @@ jobs:
         run: |
           python scripts/python/drop_schema.py "${OBJECT_NAME}" "${{ github.event.issue.number }}"
 
-  # ---------------- Notify (always) ----------------
+  # ---------------- Notify (only when gate says proceed) ----------------
   notify:
     needs: [gate, resolve_context, security, pipelines, observability, cleanup_after_pipeline]
     runs-on: ubuntu-latest
-    if: always()
+    if: ${{ needs.gate.outputs.proceed == 'true' }}
     steps:
       - name: Compose summary
         id: sum
