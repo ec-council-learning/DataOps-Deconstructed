@@ -141,49 +141,81 @@ jobs:
           set -euo pipefail
           dbt deps
 
-      # (Optional) If the dashboard must refresh warehouse objects first, keep these:
-      - name: Run dbt build/tests (layer-agnostic)
-        working-directory: scripts/dbt
+      # === Aggregate publishing to a single GitHub Pages site ===
+
+      # Pull the current gh-pages branch so we can preserve/extend what’s already published
+      - name: Fetch current GitHub Pages (gh-pages)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+        continue-on-error: true
+
+      # Prime the working site directory with existing content (if any)
+      - name: Seed working site from current gh-pages
         shell: bash
         run: |
           set -euo pipefail
-          test -f profiles.yml
-          dbt deps
-          dbt build --target "${DBT_ENVIRONMENT}" --fail-fast
-          dbt test  --target "${DBT_ENVIRONMENT}" --store-failures
+          rm -rf _site
+          mkdir -p _site
+          if [ -d gh-pages ]; then
+            rsync -a --delete --exclude='.git' gh-pages/ _site/
+          fi
 
       - name: Compute KPIs & DQ signals
         id: kpis
         shell: bash
         run: |
           set -euo pipefail
+          ENV_SLUG="${DBT_ENVIRONMENT}"
+          RUN_DIR="_site/${ENV_SLUG}/runs/${RUN_ID}"
+          LATEST_DIR="_site/${ENV_SLUG}/latest"
+          mkdir -p "${RUN_DIR}" "${LATEST_DIR}"
+
           python scripts/python/compute_metrics.py \
             --gold-schema   "gold" \
             --silver-schema "silver" \
             --bronze-schema "${BRONZE_SCHEMA}" \
             --sql-file "scripts/sql/kpi_rebuild_and_select.sql" \
             --out "dashboard_metrics.json"
-          echo "kpis=$(jq -c '.' dashboard_metrics.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Render Markdown & HTML (publish to ./_site)
+          # keep a copy in the run folder (raw data)
+          cp dashboard_metrics.json "${RUN_DIR}/dashboard_metrics.json"
+
+          echo "kpis=$(jq -c '.' dashboard_metrics.json)" >> "$GITHUB_OUTPUT"
+          echo "ENV_SLUG=${ENV_SLUG}" >> "$GITHUB_OUTPUT"
+          echo "RUN_DIR=${RUN_DIR}"   >> "$GITHUB_OUTPUT"
+          echo "LATEST_DIR=${LATEST_DIR}" >> "$GITHUB_OUTPUT"
+
+      - name: Render Markdown & HTML (env/latest + env/runs/RUN_ID)
         shell: bash
         run: |
           set -euo pipefail
+          ENV_SLUG="${{ steps.kpis.outputs.ENV_SLUG }}"
+          RUN_DIR="${{ steps.kpis.outputs.RUN_DIR }}"
+          LATEST_DIR="${{ steps.kpis.outputs.LATEST_DIR }}"
+          data_file="${RUN_DIR}/dashboard_metrics.json"  # already copied there
           python - <<'PY'
           import json, markdown, os
           from datetime import datetime, timezone
-          data = json.load(open("dashboard_metrics.json"))
-          os.makedirs("_site", exist_ok=True)
+          run_id   = os.getenv("RUN_ID")
+          run_url  = os.getenv("RUN_URL")
+          sha      = os.getenv("GIT_SHA")
+          env_slug = os.getenv("ENV_SLUG")
+          run_dir  = os.getenv("RUN_DIR")
+          latest   = os.getenv("LATEST_DIR")
+          data = json.load(open(f"{run_dir}/dashboard_metrics.json"))
 
           trend = (f"{data.get('order_trend_pct')}%"
                    if data.get('order_trend_pct') is not None else "n/a")
           fresh = (f"{data.get('freshness_hours')}h"
                    if data.get('freshness_hours') is not None else "n/a")
 
-          md = f"""# Observability Dashboard
+          md = f"""# Observability Dashboard — {env_slug}
 
-          **Run:** [{os.getenv('RUN_ID')}]({os.getenv('RUN_URL')})
-          **Commit:** `{os.getenv('GIT_SHA')[:7]}`
+          **Run:** [{run_id}]({run_url})  
+          **Commit:** `{sha[:7]}`  
           **As of:** {datetime.now(timezone.utc).isoformat()}
 
           ## Business KPIs (Gold)
@@ -195,39 +227,78 @@ jobs:
 
           ## Data Quality
           - Tests: **{data.get('tests_passed','0')} / {data.get('tests_total','0')}** passed (**{data.get('pass_rate_pct','0')}%**)
-          - Freshness (silver snapshot): **{fresh}** lag
+          - Freshness (silver snapshot): **{fresh}**
           - Anomaly Detected: **{':warning: YES' if data.get('anomaly_flag') else 'No'}**
-
-          ---
-          _Schemas may use per-issue isolation for safe iteration where applicable._
           """
-          open("_site/dashboard.md","w").write(md)
-          open("_site/index.html","w").write(markdown.markdown(md, extensions=['tables']))
-          PY
 
-      - name: Generate dbt docs
+          os.makedirs(run_dir, exist_ok=True)
+          os.makedirs(latest,  exist_ok=True)
+          open(f"{run_dir}/dashboard.md","w").write(md)
+          open(f"{run_dir}/index.html","w").write(markdown.markdown(md, extensions=['tables']))
+          # update env/latest as a copy of this run
+          open(f"{latest}/dashboard.md","w").write(md)
+          open(f"{latest}/index.html","w").write(markdown.markdown(md, extensions=['tables']))
+          PY
+        env:
+          ENV_SLUG: ${{ steps.kpis.outputs.ENV_SLUG }}
+          RUN_DIR: ${{ steps.kpis.outputs.RUN_DIR }}
+          LATEST_DIR: ${{ steps.kpis.outputs.LATEST_DIR }}
+
+      - name: Generate dbt docs and copy to env/latest + run archive
         working-directory: scripts/dbt
         shell: bash
         run: |
           set -euo pipefail
           dbt docs generate --target "${DBT_ENVIRONMENT}"
+          # copy artifacts to the site
+          cd "${GITHUB_WORKSPACE}"
+          ENV_SLUG="${{ steps.kpis.outputs.ENV_SLUG }}"
+          RUN_DIR="${{ steps.kpis.outputs.RUN_DIR }}"
+          LATEST_DIR="${{ steps.kpis.outputs.LATEST_DIR }}"
+          mkdir -p "${RUN_DIR}/dbt-docs" "${LATEST_DIR}/dbt-docs"
+          # core docs + manifest
+          cp -R scripts/dbt/target/*.json "${RUN_DIR}/dbt-docs/"  2>/dev/null || true
+          cp -R scripts/dbt/target/*.json "${LATEST_DIR}/dbt-docs/" 2>/dev/null || true
+          cp -R scripts/dbt/target/manifest.json "${RUN_DIR}/dbt-docs/"  2>/dev/null || true
+          cp -R scripts/dbt/target/manifest.json "${LATEST_DIR}/dbt-docs/" 2>/dev/null || true
+          # static docs website (if produced)
+          if [ -d scripts/dbt/target/docs ]; then
+            cp -R scripts/dbt/target/docs/* "${RUN_DIR}/dbt-docs/"
+            cp -R scripts/dbt/target/docs/* "${LATEST_DIR}/dbt-docs/"
+          fi
 
-      - name: Copy dbt docs into _site
+      - name: Rebuild top-level index (link all envs & recent runs)
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p _site/dbt-docs
-          cp -R scripts/dbt/target/*.json _site/dbt-docs/ || true
-          cp -R scripts/dbt/target/manifest.json _site/dbt-docs/ || true
-          if [ -d scripts/dbt/target/docs ]; then
-            cp -R scripts/dbt/target/docs/* _site/dbt-docs/
-          fi
+          # Simple index that lists envs and their latest links + the most recent 10 runs
+          python - <<'PY'
+          import os, pathlib, html
+          root = pathlib.Path("_site")
+          envs = sorted([p for p in root.iterdir() if p.is_dir()])
+          def runs(envdir):
+            rdir = envdir / "runs"
+            if not rdir.exists(): return []
+            # sort by directory name (RUN_ID); GitHub run_id grows over time
+            return sorted([p for p in rdir.iterdir() if p.is_dir()], key=lambda x: x.name, reverse=True)[:10]
+          parts = ["<h1>Observability Dashboards</h1><ul>"]
+          for e in envs:
+            parts.append(f"<li><b>{html.escape(e.name)}</b>: "
+                         f"<a href='{e.name}/latest/'>latest</a>"
+                         f" — runs: " + ", ".join(
+                           f\"<a href='{e.name}/runs/{html.escape(r.name)}/'>{html.escape(r.name)}</a>\" for r in runs(e)
+                         ) + "</li>")
+          parts.append("</ul>")
+          open("_site/index.html","w").write("\n".join(parts))
+          PY
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages (single site, aggregated)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_site
+          keep_files: true
+
 
       - name: Slack — Success
         if: success() && env.SLACK_WEBHOOK_URL != ''
