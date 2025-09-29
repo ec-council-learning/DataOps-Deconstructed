@@ -1,4 +1,8 @@
-name: Observability Metrics Dashboard Generation
+name: Observability Metrics
+
+# This workflow generates a Snowflake/DBT-backed Observability dashboard
+# and publishes it to GitHub Pages. It follows the same structure and
+# conventions as data_pipeline.yml (setup → workloads → notify).
 
 on:
   workflow_call:
@@ -16,7 +20,7 @@ on:
         required: false
         type: string
       master_schema:
-        description: "Master-data schema (seeds) within LOGISTICS_DEMO"
+        description: "Master-data schema containing seeds (e.g., master_data or bronze)"
         required: false
         type: string
         default: "master_data"
@@ -30,22 +34,66 @@ on:
       SNOWFLAKE_PRIVATE_KEY_B64: {required: false}
       SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: {required: false}
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: observability-${{ github.ref }}
   cancel-in-progress: false
 
-defaults:
-  run:
-    shell: bash -euo pipefail
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+  SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+  SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 jobs:
-  generate_metrics_dashboard:
+  # -----------------------------------------------------------------------------
+  # Setup job: resolves the dbt environment and schema based on branch name.
+  # Saves these values to outputs for later jobs.
+  # -----------------------------------------------------------------------------
+  setup:
     runs-on: ubuntu-latest
+    outputs:
+      dbt_env: ${{ steps.set-env.outputs.DBT_ENVIRONMENT }}
+      dbt_schema: ${{ steps.set-env.outputs.DBT_TARGET_SCHEMA }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine dbt target (env/schema)
+        id: set-env
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="${{ github.ref }}"
+          if [[ "$REF" == "refs/heads/main" ]]; then
+            DBT_ENVIRONMENT=prod
+            DBT_TARGET_SCHEMA=prod
+          elif [[ "$REF" == "refs/heads/develop" ]]; then
+            DBT_ENVIRONMENT=dev
+            DBT_TARGET_SCHEMA=dev
+          else
+            ISSUE_ID=${{ github.run_id }}
+            DBT_ENVIRONMENT=ci_cd
+            DBT_TARGET_SCHEMA="ci_${ISSUE_ID}"
+          fi
+          echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT"       | tee -a "$GITHUB_ENV"
+          echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA"   | tee -a "$GITHUB_ENV"
+          echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT"     >> "$GITHUB_OUTPUT"
+          echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA" >> "$GITHUB_OUTPUT"
+
+  # -----------------------------------------------------------------------------
+  # Generate & Publish Observability Dashboard
+  # -----------------------------------------------------------------------------
+  observability:
+    name: "📊 Observability Metrics"
+    needs: [setup]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     env:
       # Snowflake / dbt
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
@@ -53,7 +101,6 @@ jobs:
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
       SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-      # Optional key-pair auth (preferred if provided)
       SNOWFLAKE_PRIVATE_KEY_B64: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}
       SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
 
@@ -62,11 +109,14 @@ jobs:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       GIT_SHA: ${{ github.sha }}
       DBT_PROFILES_DIR: scripts/dbt
+      DBT_ENVIRONMENT: ${{ needs.setup.outputs.dbt_env }}
+      DBT_TARGET_SCHEMA: ${{ needs.setup.outputs.dbt_schema }}
+      MASTER_SCHEMA: ${{ inputs.master_schema }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       TZ: UTC
-
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -78,20 +128,25 @@ jobs:
 
       - name: Install Python dependencies
         if: inputs.requirements_path != ''
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r "${{ inputs.requirements_path }}"
 
       - name: Install DBT dependencies
         working-directory: scripts/dbt
-        run: dbt deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          dbt deps
 
-      # Optional dbt build (remove if dashboards only read warehouse)
+      # Optional: build/tests to ensure warehouse is fresh before reading metrics
       - name: Run dbt build/tests (layer-agnostic)
         working-directory: scripts/dbt
-        env:
-          DBT_ENVIRONMENT: ${{ inputs.environment || 'prod' }}
+        shell: bash
         run: |
+          set -euo pipefail
           test -f profiles.yml
           dbt deps
           dbt build --target "${DBT_ENVIRONMENT}" --fail-fast
@@ -99,18 +154,21 @@ jobs:
 
       - name: Compute KPIs & DQ signals
         id: kpis
+        shell: bash
         run: |
-          # For env mapping you can customize; here we keep plain 'gold'/'silver'
+          set -euo pipefail
           python scripts/python/compute_metrics.py \
             --gold-schema   "gold" \
             --silver-schema "silver" \
-            --master-schema "${{ inputs.master_schema }}" \
+            --master-schema "${MASTER_SCHEMA}" \
             --sql-file "scripts/sql/kpi_rebuild_and_select.sql" \
             --out "dashboard_metrics.json"
           echo "kpis=$(jq -c '.' dashboard_metrics.json)" >> "$GITHUB_OUTPUT"
 
       - name: Render Markdown & HTML (publish to ./_site)
+        shell: bash
         run: |
+          set -euo pipefail
           python - <<'PY'
           import json, markdown, os
           from datetime import datetime, timezone
@@ -129,19 +187,19 @@ jobs:
           **As of:** {datetime.now(timezone.utc).isoformat()}
 
           ## Business KPIs (Gold)
-          - Week Orders: **{data['wk_orders']}**
-          - Week Units Shipped: **{data['wk_units']}**
-          - Avg Stock Turnover: **{data['avg_turnover']}**
+          - Week Orders: **{data.get('wk_orders','n/a')}**
+          - Week Units Shipped: **{data.get('wk_units','n/a')}**
+          - Avg Stock Turnover: **{data.get('avg_turnover','n/a')}**
           - Orders Trend vs last week: **{trend}**
-          - Latest Date: **{data['last_date']}**
+          - Latest Date: **{data.get('last_date','n/a')}**
 
           ## Data Quality
-          - Tests: **{data['tests_passed']} / {data['tests_total']}** passed (**{data['pass_rate_pct']}%**)
+          - Tests: **{data.get('tests_passed','0')} / {data.get('tests_total','0')}** passed (**{data.get('pass_rate_pct','0')}%**)
           - Freshness (silver snapshot): **{fresh}** lag
-          - Anomaly Detected: **{':warning: YES' if data['anomaly_flag'] else 'No'}**
+          - Anomaly Detected: **{':warning: YES' if data.get('anomaly_flag') else 'No'}**
 
           ---
-          _Schemas use per-issue isolation for safe iteration where applicable._
+          _Schemas may use per-issue isolation for safe iteration where applicable._
           """
           open("_site/dashboard.md","w").write(md)
           open("_site/index.html","w").write(markdown.markdown(md, extensions=['tables']))
@@ -149,16 +207,18 @@ jobs:
 
       - name: Generate dbt docs
         working-directory: scripts/dbt
-        env:
-          DBT_ENVIRONMENT: ${{ inputs.environment || 'prod' }}
-        run: dbt docs generate --target "${DBT_ENVIRONMENT}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          dbt docs generate --target "${DBT_ENVIRONMENT}"
 
       - name: Copy dbt docs into _site
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p _site/dbt-docs
           cp -R scripts/dbt/target/*.json _site/dbt-docs/ || true
           cp -R scripts/dbt/target/manifest.json _site/dbt-docs/ || true
-          # copy the docs site (target/docs) if it exists
           if [ -d scripts/dbt/target/docs ]; then
             cp -R scripts/dbt/target/docs/* _site/dbt-docs/
           fi
