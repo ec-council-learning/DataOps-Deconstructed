@@ -97,14 +97,14 @@ jobs:
       # selects the monitoring layer defined in schema.yml.  The `+` suffix ensures
       # upstream dependencies (e.g., silver/gold) are built as needed.  Extra flags
       # from the caller are appended verbatim.
-      - name: Build monitoring models
+      - name: Create monitoring models
         working-directory: scripts/dbt
         shell: bash
         run: |
           set -euo pipefail
           test -f profiles.yml
           # Append `|| true` so test failures in observability models do not fail the pipeline.
-          dbt build --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+          dbt run --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
 
       # NOTE: We no longer pull from the gh-pages branch.  Instead, each build
       # starts with a clean _site folder.  The final site will be published
