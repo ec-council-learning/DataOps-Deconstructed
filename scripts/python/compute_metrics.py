@@ -11,9 +11,9 @@ import snowflake.connector as sf
 DB_NAME = "LOGISTICS_DEMO"  # adjust here if needed
 
 _PATTERNS = {
-    "GOLD_SCHEMA": re.compile(r"\{\{\s*GOLD_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
-    "SILVER_SCHEMA": re.compile(r"\{\{\s*SILVER_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
-    "BRONZE_SCHEMA": re.compile(r"\{\{\s*BRONZE_SCHEMA(?:\s*\|[^}]*)?\s*\}\}"),
+    "GOLD": re.compile(r"__GOLD_SCHEMA__"),
+    "SILVER": re.compile(r"__SILVER_SCHEMA__"),
+    "BRONZE": re.compile(r"__BRONZE_SCHEMA__"),
 }
 
 
@@ -43,9 +43,9 @@ def connect_from_env():
 
 def render_sql(template_str, gold, silver, bronze):
     out = template_str
-    out = _PATTERNS["GOLD_SCHEMA"].sub(gold, out)
-    out = _PATTERNS["SILVER_SCHEMA"].sub(silver, out)
-    out = _PATTERNS["BRONZE_SCHEMA"].sub(bronze, out)
+    out = _PATTERNS["GOLD"].sub(gold, out)
+    out = _PATTERNS["SILVER"].sub(silver, out)
+    out = _PATTERNS["BRONZE"].sub(bronze, out)
     return out
 
 
