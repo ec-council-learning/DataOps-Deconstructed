@@ -63,12 +63,8 @@ jobs:
 
           # ---------- orchestrate / elt triggers ----------
           RUN_ORCH: ${{ contains(env.COMMITS_JSON, '#orchestrate') || contains(env.HEAD_MSG, '#orchestrate') }}
-          RUN_ELT: ${{ contains(env.COMMITS_JSON, '#run_elt')      || contains(env.HEAD_MSG, '#run_elt')
-                         || contains(env.COMMITS_JSON, '#run_pipeline')  || contains(env.HEAD_MSG, '#run_pipeline')
-                         || contains(env.COMMITS_JSON, '#run_pipelines') || contains(env.HEAD_MSG, '#run_pipelines') }}
-          SKIP_ELT: ${{ contains(env.COMMITS_JSON, '#skip_elt')     || contains(env.HEAD_MSG, '#skip_elt')
-                         || contains(env.COMMITS_JSON, '#skip_pipeline') || contains(env.HEAD_MSG, '#skip_pipeline')
-                         || contains(env.COMMITS_JSON, '#skip_pipelines')|| contains(env.HEAD_MSG, '#skip_pipelines') }}
+          RUN_ELT: ${{ contains(env.COMMITS_JSON, '#run_elt')      || contains(env.HEAD_MSG, '#run_elt') || contains(env.COMMITS_JSON, '#run_pipeline')  || contains(env.HEAD_MSG, '#run_pipeline') || contains(env.COMMITS_JSON, '#run_pipelines') || contains(env.HEAD_MSG, '#run_pipelines') }}
+          SKIP_ELT: ${{ contains(env.COMMITS_JSON, '#skip_elt')     || contains(env.HEAD_MSG, '#skip_elt') || contains(env.COMMITS_JSON, '#skip_pipeline') || contains(env.HEAD_MSG, '#skip_pipeline') || contains(env.COMMITS_JSON, '#skip_pipelines')|| contains(env.HEAD_MSG, '#skip_pipelines') }}
 
           # ---------- per-stage toggles ----------
           RUN_SECURITY_TAG: ${{ contains(env.COMMITS_JSON, '#run_security') || contains(env.HEAD_MSG, '#run_security') }}
@@ -79,19 +75,17 @@ jobs:
 
           # ---------- proceed logic ----------
           # issues → proceed if feature/cleanup; manual dispatch → proceed
-          # pushes → proceed if (feature/*) OR any explicit run tag (global, orchestrate, elt, stage) and not globally skipped
+          # pushes → proceed by default (unless globally skipped) so stages can decide.
           PROCEED: ${{ (
               github.event_name == 'issues'            && (env.HAS_FEATURE == 'true' || env.HAS_CLEANUP == 'true')
             ) || (
               github.event_name == 'workflow_dispatch'
             ) || (
-              github.event_name == 'push' && (
-                   env.FEATURE_BRANCH == 'true' || env.RUN_ALL == 'true' || env.RUN_ORCH == 'true' || env.RUN_ELT == 'true' || env.RUN_SECURITY_TAG == 'true' || env.RUN_OBS_TAG == 'true'
-              ) && env.SKIP_ALL != 'true'
+              github.event_name == 'push' && env.SKIP_ALL != 'true'
             ) }}
 
           # ---------- stage decisions ----------
-          # Security runs if: global run OR per-stage run OR run_elt/orchestrate OR feature branch; unless explicitly skipped/globally skipped.
+          # Security runs if: global run OR per-stage run OR orchestrate/elt tag OR feature branch; unless explicitly skipped/globally skipped.
           RUN_SECURITY: ${{ (
               env.SKIP_ALL == 'true' || env.SKIP_SECURITY_TAG == 'true'
             ) && 'no' || (
@@ -105,7 +99,7 @@ jobs:
               env.RUN_ALL == 'true' || env.RUN_ORCH == 'true' || env.RUN_ELT == 'true' || env.FEATURE_BRANCH == 'true'
             ) && 'yes' || 'no' }}
 
-          # Observability runs if: global run OR per-stage run OR run_elt/orchestrate OR feature branch; unless explicitly skipped/globally skipped.
+          # Observability runs if: global run OR per-stage run OR orchestrate/elt tag OR feature branch; unless explicitly skipped/globally skipped.
           RUN_OBS: ${{ (
               env.SKIP_ALL == 'true' || env.SKIP_OBS_TAG == 'true'
             ) && 'no' || (
