@@ -57,23 +57,23 @@ jobs:
 
           # stage toggles (default yes; allow commit-msg overrides)
           RUN_SECURITY_SEL: ${{ (
-              contains(toJson(github.event.commits), '#skip security') ||
-              contains(github.event.head_commit.message, '#skip security')
+              contains(toJson(github.event.commits), '#skip_security') ||
+              contains(github.event.head_commit.message, '#skip_security')
             ) && 'no' || (
-              contains(toJson(github.event.commits), '#run security')  ||
-              contains(github.event.head_commit.message, '#run security')
+              contains(toJson(github.event.commits), '#run_security')  ||
+              contains(github.event.head_commit.message, '#run_security')
             ) && 'yes' || 'yes' }}
 
           RUN_OBS_SEL: ${{ (
-              contains(toJson(github.event.commits), '#skip obs') ||
-              contains(toJson(github.event.commits), '#skip observability') ||
-              contains(github.event.head_commit.message, '#skip obs') ||
-              contains(github.event.head_commit.message, '#skip observability')
+              contains(toJson(github.event.commits), '#skip_obs') ||
+              contains(toJson(github.event.commits), '#skip_observability') ||
+              contains(github.event.head_commit.message, '#skip_obs') ||
+              contains(github.event.head_commit.message, '#skip_observability')
             ) && 'no' || (
-              contains(toJson(github.event.commits), '#run obs') ||
-              contains(toJson(github.event.commits), '#run observability') ||
-              contains(github.event.head_commit.message, '#run obs') ||
-              contains(github.event.head_commit.message, '#run observability')
+              contains(toJson(github.event.commits), '#run_obs') ||
+              contains(toJson(github.event.commits), '#run_observability') ||
+              contains(github.event.head_commit.message, '#run_obs') ||
+              contains(github.event.head_commit.message, '#run_observability')
             ) && 'yes' || 'yes' }}
 
   # ---------------- Resolve environment ----------------
