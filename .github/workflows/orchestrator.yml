@@ -63,80 +63,32 @@ jobs:
 
           # ---------- orchestrate / elt triggers ----------
           RUN_ORCH: ${{ contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message || '', '#orchestrate') }}
-          RUN_ELT: ${{ contains(toJson(github.event.commits), '#run_elt') || contains(github.event.head_commit.message || '', '#run_elt')
-                      || contains(toJson(github.event.commits), '#run_pipeline') || contains(github.event.head_commit.message || '', '#run_pipeline')
-                      || contains(toJson(github.event.commits), '#run_pipelines') || contains(github.event.head_commit.message || '', '#run_pipelines') }}
-          SKIP_ELT: ${{ contains(toJson(github.event.commits), '#skip_elt') || contains(github.event.head_commit.message || '', '#skip_elt')
-                      || contains(toJson(github.event.commits), '#skip_pipeline') || contains(github.event.head_commit.message || '', '#skip_pipeline')
-                      || contains(toJson(github.event.commits), '#skip_pipelines') || contains(github.event.head_commit.message || '', '#skip_pipelines') }}
+          RUN_ELT: ${{ contains(toJson(github.event.commits), '#run_elt') || contains(github.event.head_commit.message || '', '#run_elt')|| contains(toJson(github.event.commits), '#run_pipeline') || contains(github.event.head_commit.message || '', '#run_pipeline')|| contains(toJson(github.event.commits), '#run_pipelines') || contains(github.event.head_commit.message || '', '#run_pipelines') }}
+          SKIP_ELT: ${{ contains(toJson(github.event.commits), '#skip_elt') || contains(github.event.head_commit.message || '', '#skip_elt')|| contains(toJson(github.event.commits), '#skip_pipeline') || contains(github.event.head_commit.message || '', '#skip_pipeline')|| contains(toJson(github.event.commits), '#skip_pipelines') || contains(github.event.head_commit.message || '', '#skip_pipelines') }}
 
           # ---------- per-stage toggles ----------
           RUN_SECURITY_TAG: ${{ contains(toJson(github.event.commits), '#run_security') || contains(github.event.head_commit.message || '', '#run_security') }}
           SKIP_SECURITY_TAG: ${{ contains(toJson(github.event.commits), '#skip_security') || contains(github.event.head_commit.message || '', '#skip_security') }}
 
-          RUN_OBS_TAG: ${{ contains(toJson(github.event.commits), '#run_obs') || contains(github.event.head_commit.message || '', '#run_obs')
-                          || contains(toJson(github.event.commits), '#run_observability') || contains(github.event.head_commit.message || '', '#run_observability') }}
-          SKIP_OBS_TAG: ${{ contains(toJson(github.event.commits), '#skip_obs') || contains(github.event.head_commit.message || '', '#skip_obs')
-                           || contains(toJson(github.event.commits), '#skip_observability') || contains(github.event.head_commit.message || '', '#skip_observability') }}
+          RUN_OBS_TAG: ${{ contains(toJson(github.event.commits), '#run_obs') || contains(github.event.head_commit.message || '', '#run_obs') || contains(toJson(github.event.commits), '#run_observability') || contains(github.event.head_commit.message || '', '#run_observability') }}
+          SKIP_OBS_TAG: ${{ contains(toJson(github.event.commits), '#skip_obs') || contains(github.event.head_commit.message || '', '#skip_obs') || contains(toJson(github.event.commits), '#skip_observability') || contains(github.event.head_commit.message || '', '#skip_observability') }}
 
           # ---------- proceed logic (Option A: opt-in on pushes) ----------
           # proceed only when:
           # - issues with feature/cleanup labels
           # - manual dispatch
           # - push with #run_all OR #orchestrate OR any explicit run tag
-          PROCEED: ${{ (
-              github.event_name == 'issues' && (contains(toJson(github.event.issue), '"name":"feature"') || contains(toJson(github.event.issue), '"name":"cleanup"'))
-            ) || (
-              github.event_name == 'workflow_dispatch'
-            ) || (
-              github.event_name == 'push'
-              && ! ( contains(toJson(github.event.commits), '#skip_all') || contains(github.event.head_commit.message || '', '#skip_all') || contains(github.event.head_commit.message || '', '#skip_orchestrate') )
-              && (
-                   contains(toJson(github.event.commits), '#run_all') || contains(github.event.head_commit.message || '', '#run_all')
-                || contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message || '', '#orchestrate')
-                || contains(toJson(github.event.commits), '#run_security') || contains(github.event.head_commit.message || '', '#run_security')
-                || contains(toJson(github.event.commits), '#run_elt') || contains(github.event.head_commit.message || '', '#run_elt')
-                || contains(toJson(github.event.commits), '#run_pipeline') || contains(github.event.head_commit.message || '', '#run_pipeline')
-                || contains(toJson(github.event.commits), '#run_pipelines') || contains(github.event.head_commit.message || '', '#run_pipelines')
-                || contains(toJson(github.event.commits), '#run_obs') || contains(github.event.head_commit.message || '', '#run_obs')
-                || contains(toJson(github.event.commits), '#run_observability') || contains(github.event.head_commit.message || '', '#run_observability')
-              )
-            ) }}
+          PROCEED: ${{ (  github.event_name == 'issues' && (contains(toJson(github.event.issue), '"name":"feature"') || contains(toJson(github.event.issue), '"name":"cleanup"'))) || (  github.event_name == 'workflow_dispatch') || (  github.event_name == 'push'  && ! ( contains(toJson(github.event.commits), '#skip_all') || contains(github.event.head_commit.message || '', '#skip_all') || contains(github.event.head_commit.message || '', '#skip_orchestrate') )  && (       contains(toJson(github.event.commits), '#run_all') || contains(github.event.head_commit.message || '', '#run_all')    || contains(toJson(github.event.commits), '#orchestrate') || contains(github.event.head_commit.message || '', '#orchestrate')    || contains(toJson(github.event.commits), '#run_security') || contains(github.event.head_commit.message || '', '#run_security')    || contains(toJson(github.event.commits), '#run_elt') || contains(github.event.head_commit.message || '', '#run_elt')    || contains(toJson(github.event.commits), '#run_pipeline') || contains(github.event.head_commit.message || '', '#run_pipeline')    || contains(toJson(github.event.commits), '#run_pipelines') || contains(github.event.head_commit.message || '', '#run_pipelines')    || contains(toJson(github.event.commits), '#run_obs') || contains(github.event.head_commit.message || '', '#run_obs')    || contains(toJson(github.event.commits), '#run_observability') || contains(github.event.head_commit.message || '', '#run_observability')  )) }}
 
           # An “explicit run tag” means at least one of run_security_tag, run_elt or run_obs is present.
-          EXPLICIT_RUN_TAG: ${{ (
-              contains(toJson(github.event.commits), '#run_security') || contains(github.event.head_commit.message || '', '#run_security')
-              || contains(toJson(github.event.commits), '#run_elt') || contains(github.event.head_commit.message || '', '#run_elt')
-              || contains(toJson(github.event.commits), '#run_pipeline') || contains(github.event.head_commit.message || '', '#run_pipeline')
-              || contains(toJson(github.event.commits), '#run_pipelines') || contains(github.event.head_commit.message || '', '#run_pipelines')
-              || contains(toJson(github.event.commits), '#run_obs') || contains(github.event.head_commit.message || '', '#run_obs')
-              || contains(toJson(github.event.commits), '#run_observability') || contains(github.event.head_commit.message || '', '#run_observability')
-            ) }}
+          EXPLICIT_RUN_TAG: ${{ (  contains(toJson(github.event.commits), '#run_security') || contains(github.event.head_commit.message || '', '#run_security')  || contains(toJson(github.event.commits), '#run_elt') || contains(github.event.head_commit.message || '', '#run_elt')  || contains(toJson(github.event.commits), '#run_pipeline') || contains(github.event.head_commit.message || '', '#run_pipeline')  || contains(toJson(github.event.commits), '#run_pipelines') || contains(github.event.head_commit.message || '', '#run_pipelines')  || contains(toJson(github.event.commits), '#run_obs') || contains(github.event.head_commit.message || '', '#run_obs')  || contains(toJson(github.event.commits), '#run_observability') || contains(github.event.head_commit.message || '', '#run_observability')) }}
 
           # ---------- stage decisions ----------
-          RUN_SECURITY: ${{ (
-              env.SKIP_ALL == 'true' || env.SKIP_SECURITY_TAG == 'true'
-            ) && 'no' || (
-              env.EXPLICIT_RUN_TAG == 'true' && (env.RUN_SECURITY_TAG == 'true' || env.RUN_ELT == 'true')
-            ) && 'yes' || (
-              env.EXPLICIT_RUN_TAG == 'true'
-            ) && 'no' || 'yes' }}
+          RUN_SECURITY: ${{ (  env.SKIP_ALL == 'true' || env.SKIP_SECURITY_TAG == 'true') && 'no' || (  env.EXPLICIT_RUN_TAG == 'true' && (env.RUN_SECURITY_TAG == 'true' || env.RUN_ELT == 'true')) && 'yes' || (  env.EXPLICIT_RUN_TAG == 'true') && 'no' || 'yes' }}
 
-          RUN_PIPELINES: ${{ (
-              env.SKIP_ALL == 'true' || env.SKIP_ELT == 'true'
-            ) && 'no' || (
-              env.EXPLICIT_RUN_TAG == 'true' && env.RUN_ELT == 'true'
-            ) && 'yes' || (
-              env.EXPLICIT_RUN_TAG == 'true'
-            ) && 'no' || 'yes' }}
+          RUN_PIPELINES: ${{ (  env.SKIP_ALL == 'true' || env.SKIP_ELT == 'true') && 'no' || (  env.EXPLICIT_RUN_TAG == 'true' && env.RUN_ELT == 'true') && 'yes' || (  env.EXPLICIT_RUN_TAG == 'true') && 'no' || 'yes' }}
 
-          RUN_OBS: ${{ (
-              env.SKIP_ALL == 'true' || env.SKIP_OBS_TAG == 'true'
-            ) && 'no' || (
-              env.EXPLICIT_RUN_TAG == 'true' && env.RUN_OBS_TAG == 'true'
-            ) && 'yes' || (
-              env.EXPLICIT_RUN_TAG == 'true'
-            ) && 'no' || 'yes' }}
+          RUN_OBS: ${{ (  env.SKIP_ALL == 'true' || env.SKIP_OBS_TAG == 'true') && 'no' || (  env.EXPLICIT_RUN_TAG == 'true' && env.RUN_OBS_TAG == 'true') && 'yes' || (  env.EXPLICIT_RUN_TAG == 'true') && 'no' || 'yes' }}
 
   # ---------------- Resolve environment ----------------
   resolve_context:
