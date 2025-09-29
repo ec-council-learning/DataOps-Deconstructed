@@ -94,9 +94,9 @@ jobs:
           elif [[ "$REF" == "refs/heads/develop" ]]; then
             ENV=dev
           elif [[ "$REF" == refs/heads/feature/* || "$REF" == refs/tags/* ]]; then
-            ENV=ci
+            ENV=ci_cd
           else
-            ENV=ci
+            ENV=ci_cd
           fi
           echo "environment=$ENV" >> $GITHUB_OUTPUT
 
