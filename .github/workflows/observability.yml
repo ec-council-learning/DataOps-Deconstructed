@@ -214,8 +214,8 @@ jobs:
 
           md = f"""# Observability Dashboard — {env_slug}
 
-          **Run:** [{run_id}]({run_url})  
-          **Commit:** `{sha[:7]}`  
+          **Run:** [{run_id}]({run_url})
+          **Commit:** `{sha[:7]}`
           **As of:** {datetime.now(timezone.utc).isoformat()}
 
           ## Business KPIs (Gold)
