@@ -1,43 +1,5 @@
 version: 2
 
-seeds:
-  - name: customer_orders
-    description: "Seeded customer orders (raw)."
-    columns:
-      - name: ORDER_ID
-        tests: [not_null, unique]
-      - name: PRODUCT_ID
-        tests: [not_null]
-      - name: WAREHOUSE_ID
-        tests: [not_null]
-      - name: ORDER_DATE
-        tests:
-          - not_null
-          - dbt_expectations.expect_column_values_to_be_of_type:
-              column_type: date
-
-  - name: inventory_movements
-    description: "Seeded inventory movements (raw)."
-    columns:
-      - name: MOVEMENT_ID
-        tests: [not_null, unique]
-      - name: PRODUCT_ID
-        tests: [not_null]
-      - name: WAREHOUSE_ID
-        tests: [not_null]
-
-  - name: products
-    description: "Seeded products master data."
-    columns:
-      - name: PRODUCT_ID
-        tests: [not_null, unique]
-
-  - name: warehouses
-    description: "Seeded warehouses master data."
-    columns:
-      - name: WAREHOUSE_ID
-        tests: [not_null, unique]
-
 # -------------------------------------------------------------------------
 # Bronze staging models
 # -------------------------------------------------------------------------
