@@ -97,14 +97,14 @@ jobs:
       # selects the monitoring layer defined in schema.yml.  The `+` suffix ensures
       # upstream dependencies (e.g., silver/gold) are built as needed.  Extra flags
       # from the caller are appended verbatim.
-      - name: Create monitoring models
+      - name: Build monitoring models
         working-directory: scripts/dbt
         shell: bash
         run: |
           set -euo pipefail
           test -f profiles.yml
           # Append `|| true` so test failures in observability models do not fail the pipeline.
-          dbt run --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+          dbt build --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
 
       # NOTE: We no longer pull from the gh-pages branch.  Instead, each build
       # starts with a clean _site folder.  The final site will be published
@@ -119,6 +119,7 @@ jobs:
 
       # Query the warehouse monitoring tables and produce a single JSON for rendering
       - name: Export metrics from monitoring schema
+        working-directory: scripts/dbt
         id: kpis
         shell: bash
         run: |
@@ -127,6 +128,10 @@ jobs:
           RUN_DIR="_site/${ENV_SLUG}/runs/${RUN_ID}"
           LATEST_DIR="_site/${ENV_SLUG}/latest"
           mkdir -p "${RUN_DIR}" "${LATEST_DIR}"
+
+          test -f profiles.yml
+          # Append `|| true` so test failures in observability models do not fail the pipeline.
+          dbt run --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
 
           python - <<'PY'
           import os, json
