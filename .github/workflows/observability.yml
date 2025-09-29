@@ -93,34 +93,37 @@ jobs:
         run: |
           python scripts/python/create_seed.py
 
-      # Build only the observability models using the new tags.  The `observability` tag
-      # selects the monitoring layer defined in schema.yml.  The `+` suffix ensures
-      # upstream dependencies (e.g., silver/gold) are built as needed.  Extra flags
-      # from the caller are appended verbatim.
-      - name: Build monitoring models
+      - name: Bronze checks
         working-directory: scripts/dbt
-        shell: bash
         run: |
           set -euo pipefail
           test -f profiles.yml
-          # Append `|| true` so test failures in observability models do not fail the pipeline.
-          dbt build --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
-
-      - name: Bronze checks
-        working-directory: scripts/dbt
-        run: dbt test --select tag:bronze || true
+          dbt build --select tag:bronze ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+          dbt test --select tag:bronze || true
 
       - name: Silver checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:silver || true
+        run: |
+          set -euo pipefail
+          test -f profiles.yml
+          dbt build --select tag:silver ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+          dbt test --select tag:silver || true
 
       - name: Gold checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:gold || true
+        run: |
+          set -euo pipefail
+          test -f profiles.yml
+          dbt build --select tag:gold ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+          dbt test --select tag:gold || true
 
       - name: Monitoring checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:observability || true
+        run: |
+          set -euo pipefail
+          test -f profiles.yml
+          dbt build --select tag:observability ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+          dbt test --select tag:observability || true
 
       - name: Slack — Success
         if: success() && env.SLACK_WEBHOOK_URL != ''
