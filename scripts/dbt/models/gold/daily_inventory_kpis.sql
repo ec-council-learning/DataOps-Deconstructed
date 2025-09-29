@@ -15,4 +15,5 @@ SELECT
     END AS stock_turnover_ratio
 FROM {{ ref('daily_inventory_snapshot') }}
 GROUP BY report_date, warehouse_name, product_name, category
-ORDER BY report_date DESC, warehouse_name, product_name;
+ORDER BY report_date DESC, warehouse_name, product_name
+
