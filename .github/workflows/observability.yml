@@ -103,27 +103,19 @@ jobs:
         run: |
           set -euo pipefail
           test -f profiles.yml
+          # Append `|| true` so test failures in observability models do not fail the pipeline.
           dbt build --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
 
-
-      # Pull current gh-pages content so we can publish a single, cumulative site
-      - name: Fetch current GitHub Pages (gh-pages)
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-          fetch-depth: 1
-        continue-on-error: true
-
-      - name: Seed working site from current gh-pages
+      # NOTE: We no longer pull from the gh-pages branch.  Instead, each build
+      # starts with a clean _site folder.  The final site will be published
+      # from the `public` directory using the built-in GitHub Pages deployment
+      # actions (upload-pages-artifact + deploy-pages).
+      - name: Reset working site
         shell: bash
         run: |
           set -euo pipefail
           rm -rf _site
           mkdir -p _site
-          if [ -d gh-pages ]; then
-            rsync -a --delete --exclude='.git' gh-pages/ _site/
-          fi
 
       # Query the warehouse monitoring tables and produce a single JSON for rendering
       - name: Export metrics from monitoring schema
@@ -284,13 +276,30 @@ jobs:
           parts.append("</ul>")
           open("_site/index.html","w").write("\n".join(parts))
           PY
+      # Prepare the `public` directory for GitHub Pages.  Move the generated
+      # _site into a stable `public` folder at the repository root.
+      - name: Prepare public directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf public
+          mv _site public
 
-      - name: Deploy to GitHub Pages (single aggregated site)
-        uses: peaceiris/actions-gh-pages@v4
+      # Upload the site as a GitHub Pages artifact.  This makes the `public`
+      # directory available for deployment via the deploy-pages action.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./_site
-          keep_files: true
+          path: public
+
+      # Deploy the uploaded artifact to GitHub Pages.  This action will
+      # publish the content of the `public` folder to the configured Pages
+      # environment without committing to a branch.
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Slack — Success
         if: success() && env.SLACK_WEBHOOK_URL != ''

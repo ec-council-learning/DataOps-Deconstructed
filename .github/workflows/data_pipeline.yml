@@ -127,10 +127,9 @@ jobs:
           dbt seed
           dbt run --select path:models/bronze/
 
-      # Smoke tests on bronze objects.
-      - name: Bronze basic checks (schema & rowcount smoke)
+      - name: Bronze basic checks
         working-directory: scripts/dbt
-        run: dbt test --select tag:bronze,tag:smoke+
+        run: dbt test --select tag:bronze
 
   # -----------------------------------------------------------------------------
   # Silver layer: regenerates seeds (jobs are isolated), seeds them into the

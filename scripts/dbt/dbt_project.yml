@@ -27,4 +27,3 @@ models:
     monitoring:
       +schema: monitoring           # <- stable place for observability
       +materialized: table
-      +tags: ["monitoring"]
