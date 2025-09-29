@@ -1,6 +1,22 @@
 version: 2
 
 # -------------------------------------------------------------------------
+# Source definitions for Bronze tables in Snowflake
+# -------------------------------------------------------------------------
+sources:
+  - name: bronze
+    schema: bronze
+    tables:
+      - name: inventory_movements
+        description: "Raw/bronze inventory movement events table."
+      - name: customer_orders
+        description: "Raw/bronze customer orders table."
+      - name: products
+        description: "Raw/bronze products master data."
+      - name: warehouses
+        description: "Raw/bronze warehouses master data."
+
+# -------------------------------------------------------------------------
 # Bronze staging models
 # -------------------------------------------------------------------------
 models:
@@ -45,7 +61,7 @@ models:
           - accepted_values:
               values: ['replenishment', 'outbound', 'adjustment']
 
-  - name: stg_customers_orders
+  - name: stg_customer_orders
     description: "Staging model for Bronze customer orders."
     columns:
       - name: ORDER_ID
@@ -140,9 +156,9 @@ models:
         tests:
           - not_null
 
-# -------------------------------------------------------------------------
-# Silver model
-# -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # Silver model (unchanged)
+  # -------------------------------------------------------------------------
   - name: daily_inventory_snapshot
     description: "Daily snapshot combining inventory and orders data."
     columns:
@@ -167,9 +183,9 @@ models:
         tests:
           - not_null
 
-# -------------------------------------------------------------------------
-# Gold model
-# -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # Gold model (unchanged)
+  # -------------------------------------------------------------------------
   - name: daily_inventory_kpis
     description: "Daily aggregated inventory KPIs for business analytics."
     columns:
