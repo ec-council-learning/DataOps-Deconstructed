@@ -1,5 +1,13 @@
 name: Medallion ELT
 
+# This workflow orchestrates a medallion ELT pipeline in GitHub Actions.
+# It uses a three‑layer approach (Bronze → Silver → Gold) to seed, stage,
+# transform and test data via dbt. Each layer runs in its own job.  A
+# dynamic seed generator produces CSV files on the fly for each run and
+# seeds are loaded prior to running models so that downstream views have
+# access to their raw inputs.  The final job posts a summary of the
+# results to Slack.
+
 on:
   workflow_call:
     inputs:
@@ -37,6 +45,10 @@ env:
   SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 jobs:
+  # -----------------------------------------------------------------------------
+  # Setup job: resolves the dbt environment and schema based on branch name.
+  # Saves these values to outputs for later jobs.
+  # -----------------------------------------------------------------------------
   setup:
     runs-on: ubuntu-latest
     outputs:
@@ -71,7 +83,10 @@ jobs:
           echo "DBT_ENVIRONMENT=$DBT_ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "DBT_TARGET_SCHEMA=$DBT_TARGET_SCHEMA" >> "$GITHUB_OUTPUT"
 
-  # ===== E (Extract) + L (Load) → Bronze =====
+  # -----------------------------------------------------------------------------
+  # Bronze layer: generate seeds, load raw data into bronze tables, and run
+  # basic smoke tests.  This job depends on setup.
+  # -----------------------------------------------------------------------------
   bronze_layer:
     needs: setup
     runs-on: ubuntu-latest
@@ -101,20 +116,26 @@ jobs:
         working-directory: scripts/dbt
         run: dbt deps
 
+      # Generate dynamic CSV seed files for the bronze load.
       - name: Generate Dynamic CSV Seed Files
         run: python scripts/python/create_seed.py
 
+      # Load seeds and run bronze models.
       - name: Load Bronze (seed → tables)
         working-directory: scripts/dbt
         run: |
           dbt seed
           dbt run --select path:models/bronze/
 
+      # Smoke tests on bronze objects.
       - name: Bronze basic checks (schema & rowcount smoke)
         working-directory: scripts/dbt
         run: dbt test --select tag:bronze,tag:smoke+
 
-  # ===== T (Transform) → Silver =====
+  # -----------------------------------------------------------------------------
+  # Silver layer: regenerates seeds (jobs are isolated), seeds them into the
+  # current schema, then runs all silver models.  Outputs pass rate for tests.
+  # -----------------------------------------------------------------------------
   silver_layer:
     needs: [setup, bronze_layer]
     runs-on: ubuntu-latest
@@ -148,10 +169,24 @@ jobs:
         working-directory: scripts/dbt
         run: dbt deps
 
+      # Re-generate CSV seeds in this job.  Without this step, dbt cannot
+      # find the seed nodes when compiling the silver layer because seeds
+      # generated in bronze_layer do not persist across jobs.
+      - name: Generate Dynamic CSV Seed Files
+        run: python scripts/python/create_seed.py
+
+      # Seed the regenerated CSVs into the target schema.
+      - name: Seed data for Silver
+        working-directory: scripts/dbt
+        run: dbt seed
+
+      # Build the silver models (cleaned/conformed).  Refers to staging
+      # views that read from seeds via ref(), so seeds must be present.
       - name: Build Silver (cleaned/conformed)
         working-directory: scripts/dbt
         run: dbt run --select path:models/silver/
 
+      # Run tests on silver objects and capture results.
       - name: Silver tests (constraints, nullability, referential)
         id: silver_tests
         working-directory: scripts/dbt
@@ -170,6 +205,7 @@ jobs:
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "rate=$RATE" >> $GITHUB_OUTPUT
 
+      # Check source freshness for silver and expose results.
       - name: Silver source freshness
         id: silver_fresh
         working-directory: scripts/dbt
@@ -177,7 +213,9 @@ jobs:
           dbt source freshness --output json > ../silver_fresh.json || true
           echo "file=../silver_fresh.json" >> $GITHUB_OUTPUT
 
-  # ===== T (Transform) → Gold =====
+  # -----------------------------------------------------------------------------
+  # Gold layer: builds business marts and runs tests.  Depends on silver.
+  # -----------------------------------------------------------------------------
   gold_layer:
     needs: [setup, silver_layer]
     runs-on: ubuntu-latest
@@ -212,10 +250,12 @@ jobs:
         working-directory: scripts/dbt
         run: dbt deps
 
+      # Build the business marts in gold.
       - name: Build Gold (business marts)
         working-directory: scripts/dbt
         run: dbt run --select path:models/gold/
 
+      # Run tests on gold objects and capture results.
       - name: Gold tests (business rules)
         id: gold_tests
         working-directory: scripts/dbt
@@ -234,7 +274,9 @@ jobs:
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "rate=$RATE" >> $GITHUB_OUTPUT
 
-  # ===== ELT Health Notification (Slack) =====
+  # -----------------------------------------------------------------------------
+  # Notification: posts a summary of the pipeline result to Slack.  Always runs.
+  # -----------------------------------------------------------------------------
   notify:
     needs: [setup, bronze_layer, silver_layer, gold_layer]
     runs-on: ubuntu-latest
@@ -264,11 +306,9 @@ jobs:
                 ]},
                 { "type":"divider" },
                 { "type":"section", "text": { "type":"mrkdwn",
-                  "text":"*Silver (conformed)*\n• Tests: *${{ steps.sum.outputs.silver_passed }} / ${{
-                    steps.sum.outputs.silver_total }}* (*${{ steps.sum.outputs.silver_rate }}%*)" } },
+                  "text":"*Silver (conformed)*\n• Tests: *${{ steps.sum.outputs.silver_passed }} / ${{ steps.sum.outputs.silver_total }}* (*${{ steps.sum.outputs.silver_rate }}%*)" } },
                 { "type":"section", "text": { "type":"mrkdwn",
-                  "text":"*Gold (business marts)*\n• Tests: *${{ steps.sum.outputs.gold_passed }} / ${{
-                    steps.sum.outputs.gold_total }}* (*${{ steps.sum.outputs.gold_rate }}%*)" } },
+                  "text":"*Gold (business marts)*\n• Tests: *${{ steps.sum.outputs.gold_passed }} / ${{ steps.sum.outputs.gold_total }}* (*${{ steps.sum.outputs.gold_rate }}%*)" } },
                 { "type":"context", "elements":[
                   { "type":"mrkdwn", "text":"Layers executed: *Bronze → Silver → Gold*. Freshness checks run at Silver." }
                 ]}
@@ -277,3 +317,4 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
