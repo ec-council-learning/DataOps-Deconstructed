@@ -131,7 +131,7 @@ jobs:
 
           test -f profiles.yml
           # Append `|| true` so test failures in observability models do not fail the pipeline.
-          dbt run --select tag:observability+ ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
+          dbt run --select path:models/monitoring/ || true
 
           python - <<'PY'
           import os, json
