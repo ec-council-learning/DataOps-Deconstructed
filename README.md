@@ -19,7 +19,7 @@ This repository provides a robust, hands-on implementation of modern DataOps and
 Ensure these explicit configurations are set before starting:
 
 * **Snowflake Account**: [signup.snowflake.com](https://signup.snowflake.com)
-* **GitHub Repository**: Configure repository secrets (`SNOWFLAKE_*`, `SLACK_WEBHOOK_URL`)
+* **GitHub Repository**: Configure repository secrets.
 * **Slack Integration**: Configure webhook explicitly for real-time notifications ([Slack Incoming Webhooks](https://api.slack.com/messaging/webhooks))
 
 ---
