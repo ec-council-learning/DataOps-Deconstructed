@@ -1,65 +1,77 @@
-Here’s a clean, production-ready `README.md` you can drop into the repo.
+📦 Intelligent Inventory Management — DataOps Sandbox
 
----
+Modern DataOps + DataSecOps for inventory analytics using dbt, Snowflake, and GitHub Actions.
+This lab demonstrates how DataSecOps development pipelines are managed.
+When a new feature request is opened in GitHub, the pipeline automatically provisions a dedicated Snowflake environment using the same dbt models that power production.
+This environment is fully isolated, named for the issue, and seeded with the necessary tables so you can iterate safely.
 
-# 📦 Intelligent Inventory Management — DataOps Sandbox
+Highlights: GitFlow‑aligned CI/CD, opt‑in orchestration via commit “run‑tags”, environment‑aware deployments, security scanning, and metrics publishing.
 
-Modern **DataOps + DataSecOps** for inventory analytics using **dbt**, **Snowflake**, and **GitHub Actions**. This sandbox gives you a fully automated, secure, and observable ELT stack you can learn from and adapt to your organization.
+Table of Contents
 
-> Highlights: GitFlow-aligned CI/CD, opt-in orchestration via commit “run-tags”, environment-aware deployments, security scanning, and metrics publishing.
+Features
 
----
+Architecture
 
-## Table of Contents
+Repository Layout
 
-* [Features](#features)
-* [Architecture](#architecture)
-* [Repository Layout](#repository-layout)
-* [Requirements](#requirements)
-* [Setup](#setup)
-* [How Orchestration Triggers Work](#how-orchestration-triggers-work)
-* [Quick Start](#quick-start)
-* [Local Development](#local-development)
-* [Observability](#observability)
-* [Security](#security)
-* [Troubleshooting](#troubleshooting)
-* [Contributing](#contributing)
-* [License](#license)
-* [Support](#support)
+Requirements
 
----
+Setup
 
-## Features
+How Orchestration Triggers Work
 
-* **Tiered ELT (Medallion):** dbt models for bronze → silver → gold with seeds and tests.
-* **Environment Resolution:** `main` → **prod**, `develop` → **dev**, `feature/*` → **ci_cd**.
-* **GitHub Actions Orchestrator:** Security → ELT → Observability with strict dependency gates.
-* **Opt-in Push Runs:** Pipelines only run when commit messages include specific **run-tags**.
-* **Issue-Driven Provisioning:** Label an issue `feature` to provision a temporary schema.
-* **Observability:** Automated metrics job, dashboards, and Slack summaries.
-* **Security:** SAST/linting and policy docs baked in.
+Quick Start
 
----
+Local Development
 
-## Architecture
+Observability
 
-```
+Security
+
+Troubleshooting
+
+Contributing
+
+License
+
+Support
+
+Features
+
+Tiered ELT (Medallion): dbt models for bronze → silver → gold with seeds and tests.
+
+Environment Resolution: main → prod, develop → dev, feature/* → ci_cd.
+
+Issue‑Scoped Environments: Each GitHub issue labeled feature provisions a fully isolated schema on Snowflake.
+The orchestrator uses dbt to build the models in this schema so you can develop or experiment without impacting shared environments.
+
+GitHub Actions Orchestrator: Security → ELT → Observability with strict dependency gates.
+
+Opt‑in Push Runs: Pipelines only run when commit messages include specific run‑tags.
+
+Issue‑Driven Provisioning: Label an issue feature to provision a temporary schema (merged into the above bullet for clarity).
+
+Observability: Automated metrics job, dashboards, and Slack summaries.
+
+Security: SAST/linting and policy docs baked in.
+
+Architecture
 GitHub → Orchestrator (Actions)
      ├─ 🔒 Security (SAST/linting)
      ├─ 🛠️ ELT (dbt on Snowflake)
      └─ 📊 Observability (metrics & reporting)
-```
 
-* **Snowflake** hosts schemas, tables, and compute.
-* **dbt** builds and tests models; macros enable dynamic naming by branch/issue.
-* **GitHub Actions** coordinates stages and posts Slack notifications.
-* **Python utilities** handle provisioning/cleanup and dashboard generation.
 
----
+Snowflake hosts schemas, tables, and compute.
 
-## Repository Layout
+dbt builds and tests models; macros enable dynamic naming by branch/issue.
 
-```bash
+GitHub Actions coordinates stages and posts Slack notifications.
+
+Python utilities handle provisioning/cleanup, dynamic environment creation, and dashboard generation.
+
+Repository Layout
 .
 ├── docs/
 │   ├── 00_services_configuration.md
@@ -91,6 +103,7 @@ GitHub → Orchestrator (Actions)
 │       ├── create_schema.py
 │       ├── drop_schema.py
 │       ├── create_seed.py
+│       ├── run_metrics.py
 │       └── requirements.txt
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
@@ -103,158 +116,162 @@ GitHub → Orchestrator (Actions)
 │       └── observability.yml        # Called by orchestrator
 ├── README.md
 └── LICENSE
-```
 
-> Each doc in `docs/` maps to a hands-on lab or implementation guide for this sandbox.
 
----
+Each doc in docs/ maps to a hands‑on lab or implementation guide for this sandbox.
 
-## Requirements
+Requirements
 
-* **Snowflake account:** create one at [https://signup.snowflake.com](https://signup.snowflake.com)
-* **GitHub repository:** with Actions enabled
-* **Slack Incoming Webhook:** for orchestration summaries (optional but recommended)
-* **Local tooling (optional):** `python 3.10+`, `dbt-core` + `dbt-snowflake`, `jq`
+Snowflake account: create one at https://signup.snowflake.com
 
----
+GitHub repository: with Actions enabled
 
-## Setup
+Slack Incoming Webhook: for orchestration summaries (optional but recommended)
 
-1. **Clone & open the repo.**
-2. **Configure GitHub secrets** (Repository → Settings → Secrets and variables → Actions):
+Local tooling (optional): python 3.10+, dbt-core + dbt-snowflake, jq
 
-   * `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD` (or key),
-     `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`
-   * `SLACK_WEBHOOK_URL` (optional)
-3. **(Optional) Set repository variables** (to change stage defaults):
+Setup
 
-   * `RUN_SECURITY=yes|no`, `RUN_OBSERVABILITY=yes|no`
-4. **Review docs:**
+Clone & open the repo.
 
-   * Services & accounts: `docs/00_services_configuration.md`
-   * Snowflake setup: `docs/04_snowflake_setup.md`
-   * dbt structure: `docs/03_dbt_models.md`
-   * Orchestration: `docs/05_github_actions_automation.md`
+Configure GitHub secrets (Repository → Settings → Secrets and variables → Actions):
 
----
+SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD (or key),
+SNOWFLAKE_ROLE, SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE
 
-## How Orchestration Triggers Work
+SLACK_WEBHOOK_URL (optional)
 
-The main coordinator is **`.github/workflows/orchestrator.yml`**. It will **only proceed** when one of the following is true:
+(Optional) Set repository variables (to change stage defaults):
 
-* **Manual run:** *Run workflow* (workflow_dispatch).
-* **Issue labeled** `feature` or `cleanup`: provisions or cleans up resources.
-* **Push with run-tags in the commit message** (opt-in):
+RUN_SECURITY=yes|no, RUN_OBSERVABILITY=yes|no
 
-  * `#run_all` – run everything
-  * `#orchestrate` – run orchestration
-  * Stage-specific:
+Review docs:
 
-    * `#run_security`
-    * `#run_elt`, `#run_pipeline`, or `#run_pipelines`
-    * `#run_obs` or `#run_observability`
-  * Skip tags:
+Services & accounts: docs/00_services_configuration.md
 
-    * `#skip_all`, `#skip_orchestrate`, `#skip_security`, `#skip_elt`, `#skip_pipeline(s)`, `#skip_obs`, `#skip_observability`
+Snowflake setup: docs/04_snowflake_setup.md
 
-> **No run-tags in a push ⇒ pipeline is quiet.** No stages and no Slack.
+dbt structure: docs/03_dbt_models.md
 
----
+Orchestration: docs/05_github_actions_automation.md
 
-## Quick Start
+How Orchestration Triggers Work
 
-### A) Validate the whole pipeline via tag (demo path)
+The main coordinator is .github/workflows/orchestrator.yml. It will only proceed when one of the following is true:
 
-```bash
+Manual run: Run workflow (workflow_dispatch).
+
+Issue labeled feature or cleanup: provisions or cleans up resources.
+
+When an issue is labeled feature, the orchestrator creates a new environment on Snowflake.
+Using scripts/python/create_schema.py, it dynamically names a schema based on the issue ID, seeds it with data, and invokes dbt models to build that schema.
+This environment remains isolated until the issue is closed and cleanup is triggered.
+
+Push with run‑tags in the commit message (opt‑in):
+
+#run_all – run everything
+
+#orchestrate – run orchestration
+
+Stage‑specific:
+
+#run_security
+
+#run_elt, #run_pipeline, or #run_pipelines
+
+#run_obs or #run_observability
+
+Skip tags:
+
+#skip_all, #skip_orchestrate, #skip_security, #skip_elt, #skip_pipeline(s), #skip_obs, #skip_observability
+
+No run‑tags in a push ⇒ pipeline is quiet. No stages and no Slack.
+
+Quick Start
+A) Validate the whole pipeline via tag (demo path)
 git commit -am "Pipeline validation"
 git tag "pipeline validation"
 git push origin --tags
-```
 
-### B) Opt-in run from a commit message
-
-```bash
+B) Opt‑in run from a commit message
 git commit -am "Add daily snapshot #orchestrate #run_elt"
 git push
-```
 
-### C) Provision a feature schema from an issue
+C) Provision a feature environment from an issue
 
-1. Open a new GitHub Issue using **Feature Request** template.
-2. Ensure it carries the **`feature`** label and includes the object name.
-3. The orchestrator will provision a feature schema during the next run.
+Open a new GitHub Issue using the Feature Request template.
 
----
+Ensure it carries the feature label and includes the object name.
 
-## Local Development
+The orchestrator will create a dedicated Snowflake schema for that issue during the next run, build dbt models in it, and post a Slack notification with the environment name.
 
-1. **Install Python deps (optional but useful for utilities):**
+Local Development
 
-   ```bash
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r scripts/python/requirements.txt
-   ```
-2. **Install dbt deps:**
+Install Python deps (optional but useful for utilities):
 
-   ```bash
-   cd scripts/dbt
-   dbt deps
-   ```
-3. **Seed & build (against your Snowflake target in `profiles.yml`):**
+python -m venv .venv && source .venv/bin/activate
+pip install -r scripts/python/requirements.txt
 
-   ```bash
-   dbt seed
-   dbt run
-   dbt test
-   ```
-4. **Macros & dynamic naming:** see `scripts/dbt/macros/dynamic_naming.sql` and `docs/02_dbt_dynamic_macros.md`.
 
----
+Install dbt deps:
 
-## Observability
+cd scripts/dbt
+dbt deps
 
-* Metrics SQL lives in `scripts/ddls/dashboard_metrics.sql`.
-* The **Observability** workflow publishes metrics and can update dashboards.
-* Slack summary highlights stage outcomes and links to the run.
 
----
+Seed & build (against your Snowflake target in profiles.yml):
 
-## Security
+dbt seed
+dbt run
+dbt test
 
-* Security policies and boundaries are documented in `docs/07_security_policy.md`.
-* The **Security** workflow (SAST/linting) runs as the first stage when triggered.
-* Use skip/run tags to control scope per commit.
 
----
+Macros & dynamic naming: see scripts/dbt/macros/dynamic_naming.sql and docs/02_dbt_dynamic_macros.md.
 
-## Troubleshooting
+Observability
 
-* **Push didn’t run:** confirm your commit message includes a run-tag (e.g., `#orchestrate`, `#run_elt`). Amended commits must be **pushed** for Actions to reevaluate.
-* **Jobs skipped but Slack fired:** ensure you’re on the latest `orchestrator.yml` where `notify` only runs when `gate.proceed == 'true'`.
-* **Snowflake auth errors:** verify secrets and role/warehouse/database values. Test with:
+Metrics SQL lives in scripts/ddls/dashboard_metrics.sql and scripts/python/run_metrics.py.
+The latter pulls INFORMATION_SCHEMA metrics to surface query counts, failures, durations, and storage across all environments.
 
-  ```bash
-  snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER
-  ```
-* **dbt profile not found:** confirm `profiles.yml` location and active target.
+The Observability workflow publishes metrics and can update dashboards.
 
----
+Slack summary highlights stage outcomes and links to the run.
 
-## Contributing
+Security
 
-1. Fork and create a branch from `develop`.
-2. Use clear commit messages and optional run-tags to control CI.
-3. Open a PR; the orchestrator and stage workflows will validate changes.
+Security policies and boundaries are documented in docs/07_security_policy.md.
 
----
+The Security workflow (SAST/linting) runs as the first stage when triggered.
 
-## License
+Use skip/run tags to control scope per commit.
 
-This project is released under the [MIT License](LICENSE).
+Troubleshooting
 
----
+Push didn’t run: confirm your commit message includes a run‑tag (e.g., #orchestrate, #run_elt). Amended commits must be pushed for Actions to reevaluate.
 
-## Support
+Jobs skipped but Slack fired: ensure you’re on the latest orchestrator.yml where notify only runs when gate.proceed == 'true'.
+
+Snowflake auth errors: verify secrets and role/warehouse/database values. Test with:
+
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER
+
+
+dbt profile not found: confirm profiles.yml location and active target.
+
+Contributing
+
+Fork and create a branch from develop.
+
+Use clear commit messages and optional run‑tags to control CI.
+
+Open a PR; the orchestrator and stage workflows will validate changes.
+
+License
+
+This project is released under the MIT License
+.
+
+Support
 
 Questions or issues? Reach out:
 

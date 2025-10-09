@@ -1,8 +1,5 @@
 name: Observability Metrics (dbt Monitoring)
 
-# Builds first-class dbt "monitoring" models and publishes a unified Pages site.
-# Publishes per-environment under: /<env>/latest and archives runs at: /<env>/runs/<RUN_ID>/
-
 on:
   workflow_call:
     inputs:
@@ -18,12 +15,25 @@ on:
         description: "Path to Python requirements file (for Snowflake connector, etc.)"
         required: false
         type: string
+      snowflake_database:
+        description: "Target Snowflake database used by the metrics query (e.g. LOGISTICS_DEMO)"
+        required: true
+        type: string
+      schema_prefix:
+        description: "Schema prefix filter for INFORMATION_SCHEMA storage metrics (e.g. gold_)"
+        required: true
+        type: string
+      sql_path:
+        description: "Path to sql_metrics.sql in repo"
+        required: false
+        default: "scripts/sql/sql_metrics.sql"
+        type: string
     secrets:
-      SNOWFLAKE_ACCOUNT: {required: false}
-      SNOWFLAKE_USER: {required: false}
+      SNOWFLAKE_ACCOUNT: {required: true}
+      SNOWFLAKE_USER: {required: true}
       SNOWFLAKE_PASSWORD: {required: false}
-      SNOWFLAKE_ROLE: {required: false}
-      SNOWFLAKE_WAREHOUSE: {required: false}
+      SNOWFLAKE_ROLE: {required: true}
+      SNOWFLAKE_WAREHOUSE: {required: true}
       SLACK_WEBHOOK_URL: {required: false}
       SNOWFLAKE_PRIVATE_KEY_B64: {required: false}
       SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: {required: false}
@@ -57,6 +67,9 @@ jobs:
       DBT_ENVIRONMENT: ${{ inputs.environment || 'prod' }}
       DBT_PROFILES_DIR: ${{ github.workspace }}/scripts/dbt
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      METRICS_DATABASE: ${{ inputs.snowflake_database }}
+      METRICS_SCHEMA_PREFIX: ${{ inputs.schema_prefix }}
+      METRICS_SQL_PATH: ${{ inputs.sql_path }}
       TZ: UTC
 
     steps:
@@ -73,22 +86,21 @@ jobs:
             **/requirements.txt
             ${{ inputs.requirements_path }}
 
-      - name: Install Python deps (connector, markdown, jq)
-        if: inputs.requirements_path != ''
+      - name: Install Python deps (connector, markdown)
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -r "${{ inputs.requirements_path }}"
+          if [[ -n "${{ inputs.requirements_path }}" ]]; then
+            pip install -r "${{ inputs.requirements_path }}"
+          fi
 
       - name: Install dbt packages
         working-directory: scripts/dbt
         shell: bash
         run: |
-          set -euo pipefail
           dbt deps
 
-      # Generate dynamic CSV seed files
       - name: Generate Dynamic CSV Seed Files
         run: |
           python scripts/python/create_seed.py
@@ -96,34 +108,35 @@ jobs:
       - name: Bronze checks
         working-directory: scripts/dbt
         run: |
-          set -euo pipefail
-          test -f profiles.yml
           dbt build --select tag:bronze ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
           dbt test --select tag:bronze || true
 
       - name: Silver checks
         working-directory: scripts/dbt
         run: |
-          set -euo pipefail
-          test -f profiles.yml
           dbt build --select tag:silver ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
           dbt test --select tag:silver || true
 
       - name: Gold checks
         working-directory: scripts/dbt
         run: |
-          set -euo pipefail
-          test -f profiles.yml
           dbt build --select tag:gold ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
           dbt test --select tag:gold || true
 
       - name: Monitoring checks
         working-directory: scripts/dbt
         run: |
-          set -euo pipefail
-          test -f profiles.yml
           dbt build --select tag:observability ${{ inputs.extra_flags }} --target "${DBT_ENVIRONMENT}" || true
           dbt test --select tag:observability || true
+
+      - name: Query Snowflake INFORMATION_SCHEMA metrics (run_metrics.py)
+        id: sf_metrics
+        working-directory: scripts/python
+        run: |
+          set -euo pipefail
+          echo "Using SQL file: ${METRICS_SQL_PATH}"
+          test -f "${GITHUB_WORKSPACE}/${METRICS_SQL_PATH}"
+          python run_metrics.py
 
       - name: Slack — Success
         if: success() && env.SLACK_WEBHOOK_URL != ''
@@ -137,8 +150,13 @@ jobs:
               "blocks": [
                 { "type": "header", "text": { "type": "plain_text", "text": "✅ Observability (dbt monitoring) published" } },
                 { "type": "section", "fields": [
-                  { "type":"mrkdwn", "text":"*Run:* <${{ env.RUN_URL }}|${{ env.RUN_ID }}>{{}}" },
-                  { "type":"mrkdwn", "text":"*Commit:* `${{ env.GIT_SHA }}`" }
+                  { "type":"mrkdwn", "text":"*Run:* <${{ env.RUN_URL }}|${{ env.RUN_ID }}>" },
+                  { "type":"mrkdwn", "text":"*Commit:* `${{ env.GIT_SHA }}`" },
+                  { "type":"mrkdwn", "text":"*Last date:* `${{ steps.sf_metrics.outputs.last_date }}`" },
+                  { "type":"mrkdwn", "text":"*Total queries (7d):* `${{ steps.sf_metrics.outputs.wk_total_queries }}`" },
+                  { "type":"mrkdwn", "text":"*Failed queries (7d):* `${{ steps.sf_metrics.outputs.wk_failed_queries }}`" },
+                  { "type":"mrkdwn", "text":"*Avg duration (s, 7d):* `${{ steps.sf_metrics.outputs.wk_avg_sec }}`" },
+                  { "type":"mrkdwn", "text":"*Storage (GB):* `${{ steps.sf_metrics.outputs.storage_gb }}`" }
                 ]}
               ]
             }

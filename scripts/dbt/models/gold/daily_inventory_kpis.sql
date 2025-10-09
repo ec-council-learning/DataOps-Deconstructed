@@ -1,4 +1,5 @@
 -- gold‑layer KPIs summarised from the daily snapshot
+
 SELECT
     movement_date AS report_date,
     warehouse_name,
