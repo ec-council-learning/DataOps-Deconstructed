@@ -197,6 +197,8 @@ jobs:
     uses: ./.github/workflows/observability.yml
     with:
       environment: ${{ needs.resolve_context.outputs.environment }}
+      snowflake_database: ${{ secrets.SNOWFLAKE_DATABASE || 'LOGISTICS_DEMO' }}
+      schema_prefix: ${{ vars.OBSERVABILITY_SCHEMA_PREFIX || 'monitoring' }}
       extra_flags: ""
       requirements_path: "scripts/python/obs.req.txt"
     secrets: inherit # pragma: allowlist secret
