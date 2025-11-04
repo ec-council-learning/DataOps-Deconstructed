@@ -97,6 +97,8 @@ jobs:
     if: needs.gate.outputs.proceed == 'true'
     outputs:
       environment: ${{ steps.resolve.outputs.environment }}
+      metrics_database: ${{ steps.obs.outputs.metrics_database }}
+      metrics_schema_prefix: ${{ steps.obs.outputs.metrics_schema_prefix }}
     steps:
       - name: Resolve environment
         id: resolve
@@ -113,6 +115,23 @@ jobs:
             ENV=ci_cd
           fi
           echo "environment=$ENV" >> $GITHUB_OUTPUT
+      - name: Resolve observability inputs
+        id: obs
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB='${{ secrets.SNOWFLAKE_DATABASE }}'
+          PREFIX='${{ secrets.OBSERVABILITY_SCHEMA_PREFIX }}'
+          if [[ -z "$DB" ]]; then
+            echo "::error::Missing required secret SNOWFLAKE_DATABASE"
+            exit 1
+          fi
+          if [[ -z "$PREFIX" ]]; then
+            echo "::error::Missing required secret OBSERVABILITY_SCHEMA_PREFIX"
+            exit 1
+          fi
+          echo "metrics_database=$DB" >> "$GITHUB_OUTPUT"
+          echo "metrics_schema_prefix=$PREFIX" >> "$GITHUB_OUTPUT"
 
   # ---------------- Provision (only when pipelines run; no-op unless feature label) ----------------
   provision_feature:
@@ -197,8 +216,8 @@ jobs:
     uses: ./.github/workflows/observability.yml
     with:
       environment: ${{ needs.resolve_context.outputs.environment }}
-      snowflake_database: ${{ secrets.SNOWFLAKE_DATABASE || 'LOGISTICS_DEMO' }}
-      schema_prefix: ${{ vars.OBSERVABILITY_SCHEMA_PREFIX || 'monitoring' }}
+      snowflake_database: ${{ needs.resolve_context.outputs.metrics_database }}
+      schema_prefix: ${{ needs.resolve_context.outputs.metrics_schema_prefix }}
       extra_flags: ""
       requirements_path: "scripts/python/obs.req.txt"
     secrets: inherit # pragma: allowlist secret
