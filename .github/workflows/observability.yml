@@ -67,8 +67,8 @@ jobs:
       DBT_ENVIRONMENT: ${{ inputs.environment || 'prod' }}
       DBT_PROFILES_DIR: ${{ github.workspace }}/scripts/dbt
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      METRICS_DATABASE: ${{ inputs.snowflake_database }}
-      METRICS_SCHEMA_PREFIX: ${{ inputs.schema_prefix }}
+      METRICS_DATABASE: ${{ inputs.snowflake_database || secrets.SNOWFLAKE_DATABASE }}
+      METRICS_SCHEMA_PREFIX: ${{ inputs.schema_prefix || secrets.OBSERVABILITY_SCHEMA_PREFIX }}
       METRICS_SQL_PATH: ${{ inputs.sql_path }}
       TZ: UTC
 
