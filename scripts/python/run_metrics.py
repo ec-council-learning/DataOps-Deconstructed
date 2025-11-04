@@ -54,7 +54,7 @@ print("::endgroup::")
 
 # --- Connect (password OR key) ---
 conn_kwargs = dict(
-    account=account, user=user, role=role, warehouse=wh,
+    account=account, user=user, role=role, warehouse=wh, database=database,
     session_parameters={"QUERY_TAG": "observability_metrics_workflow"}
 )
 

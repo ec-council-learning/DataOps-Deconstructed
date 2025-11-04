@@ -11,7 +11,7 @@ WITH history AS (
     CASE WHEN qh.error_code IS NOT NULL THEN 1 ELSE 0 END AS failure_flag
   FROM TABLE(
     INFORMATION_SCHEMA.QUERY_HISTORY(
-      DATEADD(DAY, -7, CURRENT_TIMESTAMP()),
+      DATEADD('day', -7, CURRENT_TIMESTAMP()),
       CURRENT_TIMESTAMP(),
       10000
     )
@@ -37,7 +37,7 @@ storage AS (
   SELECT
     CURRENT_DATE AS as_of_date,
     SUM(active_bytes + time_travel_bytes + failsafe_bytes) AS total_bytes
-  FROM __database__.information_schema.table_storage_metrics
+  FROM information_schema.table_storage_metrics
   WHERE table_catalog = '__database__'
     AND table_schema ILIKE '__schema_prefix__%'
 ),
