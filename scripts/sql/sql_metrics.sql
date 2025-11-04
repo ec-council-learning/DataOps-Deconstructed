@@ -11,7 +11,7 @@ WITH history AS (
     CASE WHEN qh.error_code IS NOT NULL THEN 1 ELSE 0 END AS failure_flag
   FROM TABLE(
     INFORMATION_SCHEMA.QUERY_HISTORY(
-      DATEADD('day', -7, CURRENT_TIMESTAMP()),
+      DATEADD('second', -604799, CURRENT_TIMESTAMP()),
       CURRENT_TIMESTAMP(),
       10000
     )
